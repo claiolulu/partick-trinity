@@ -1,0 +1,1439 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
+<script defer src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+<title>Partick Trinity</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600&family=Azeret+Mono:wght@400;500&display=swap">
+<style>
+  :root{
+    --ink:#15181d; --ink-dim:#565c66; --ink-faint:#959ba6;
+    --panel:rgba(255,255,255,.88); --panel-solid:#ffffff;
+    --edge:rgba(18,24,34,.14); --edge-hi:rgba(18,24,34,.32);
+    /* 白模里唯一的颜色：橙色。强调色与热点红点共用同一个值，形成单一"选中"语义 */
+    --accent:#ed7a19; --accent-soft:#f5bc83; --accent-deep:#a84b0d;
+    --red:#ed7a19; --red-glow:rgba(237,122,25,.30);
+    --font:"Archivo","PingFang SC","Hiragino Sans GB","Microsoft YaHei",
+           -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
+    --mono:"Azeret Mono","PingFang SC",ui-monospace,SFMono-Regular,"SF Mono",Menlo,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;height:100vh;overflow:hidden;background:#ffffff;color:var(--ink);font-family:var(--font);
+       -webkit-font-smoothing:antialiased}
+  #stage{position:fixed;inset:0}
+  #gl,#labels,#scrim{position:absolute;inset:0}
+  #scrim{pointer-events:none;background:
+    linear-gradient(180deg,rgba(255,255,255,.55) 0%,rgba(255,255,255,.12) 13%,rgba(255,255,255,0) 26%,
+                    rgba(255,255,255,0) 62%,rgba(255,255,255,.24) 84%,rgba(255,255,255,.72) 100%)}
+  #labels{pointer-events:none;overflow:hidden}
+  #labels > *{pointer-events:auto}
+
+  /* ---------- boot ---------- */
+  #boot{position:fixed;inset:0;z-index:60;display:grid;place-items:center;background:#ffffff;
+        transition:opacity .7s ease,visibility .7s}
+  #boot.gone{opacity:0;visibility:hidden}
+  #boot .bw{width:min(340px,70vw);text-align:center}
+  #boot h1{font-size:15px;font-weight:600;letter-spacing:.24em;margin:0 0 6px;color:var(--ink)}
+  #boot p{font-size:11px;color:var(--ink-faint);letter-spacing:.16em;margin:0 0 22px;font-family:var(--mono)}
+  #bar{height:1px;background:rgba(18,24,34,.12);position:relative;overflow:hidden}
+  #bar i{position:absolute;inset:0 100% 0 0;background:linear-gradient(90deg,transparent,var(--accent));
+         transition:right .45s cubic-bezier(.22,.9,.28,1)}
+
+  /* ---------- top-left title ---------- */
+  #brand{position:fixed;top:24px;left:26px;z-index:20;pointer-events:none}
+  #brand .k{font-size:10px;letter-spacing:.3em;color:var(--accent);font-family:var(--mono);margin-bottom:7px}
+  #brand h2{margin:0;font-size:21px;font-weight:600;letter-spacing:.02em;line-height:1.15}
+  #brand .sub{margin-top:5px;font-size:11px;color:var(--ink-faint);letter-spacing:.1em;font-family:var(--mono)}
+
+  /* ---------- travel readout ---------- */
+  #hud{position:fixed;top:26px;right:26px;z-index:20;text-align:right;font-family:var(--mono);
+       font-size:10px;letter-spacing:.14em;color:var(--ink-faint);pointer-events:none}
+  #hud .row{display:flex;gap:10px;justify-content:flex-end;align-items:baseline;margin-bottom:5px}
+  #hud b{color:var(--ink-dim);font-weight:500;font-variant-numeric:tabular-nums}
+  #hud .state{color:var(--accent);letter-spacing:.24em}
+  #compass{position:fixed;top:88px;right:26px;z-index:20;width:44px;height:44px;pointer-events:none;opacity:.8}
+
+  /* ---------- route rail ---------- */
+  #rail{position:fixed;left:0;right:0;bottom:0;z-index:20;padding:0 22px 20px;
+        display:flex;gap:8px;align-items:flex-end;justify-content:center;flex-wrap:wrap}
+  .chip{font:inherit;font-family:var(--font);position:relative;border:1px solid var(--edge);background:var(--panel);backdrop-filter:blur(14px);
+        -webkit-backdrop-filter:blur(14px);border-radius:2px;padding:9px 13px 8px;cursor:pointer;
+        transition:border-color .25s,background .25s,transform .25s;min-width:96px;text-align:left}
+  .chip:hover{border-color:var(--edge-hi);transform:translateY(-2px)}
+  .chip .idx{font-family:var(--mono);font-size:9px;color:var(--ink-faint);letter-spacing:.18em;display:block;margin-bottom:3px}
+  .chip .zh{font-size:12px;font-weight:500;letter-spacing:.02em;display:block;line-height:1.25}
+  .chip .en{font-size:9px;color:var(--ink-faint);letter-spacing:.06em;display:block;margin-top:2px;
+            white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:120px}
+  .chip.on{border-color:var(--accent);background:rgba(237,122,25,.06)}
+  .chip.on .idx{color:var(--accent)}
+  .chip.on::after{content:"";position:absolute;left:-1px;right:-1px;bottom:-1px;height:2px;background:var(--accent)}
+
+  #tour{font-family:var(--mono);border:1px solid var(--edge);background:var(--panel);backdrop-filter:blur(14px);
+        -webkit-backdrop-filter:blur(14px);border-radius:2px;padding:9px 14px;cursor:pointer;color:var(--ink-dim);
+        font-family:var(--mono);font-size:10px;letter-spacing:.18em;transition:.25s;align-self:stretch;
+        display:flex;align-items:center}
+  #tour:hover{border-color:var(--edge-hi);color:var(--ink)}
+  #tour.on{border-color:var(--accent-soft);color:var(--accent)}
+
+  /* ---------- hotspots ---------- */
+  .pin{position:relative;width:14px;height:14px;cursor:pointer;transition:opacity .3s}
+  .pin .inner{position:absolute;inset:0;transform:scale(var(--ps,1));transform-origin:50% 50%;
+              transition:transform .35s cubic-bezier(.22,.9,.28,1)}
+  .pin .core{position:absolute;inset:4px;border-radius:50%;background:#ffffff;
+             box-shadow:0 0 0 1.5px rgba(18,24,34,.42);transition:.35s cubic-bezier(.22,.9,.28,1)}
+  .pin.live .core{inset:2px;background:var(--red);
+                  box-shadow:0 0 0 2px #ffffff,0 0 0 3px var(--red),0 3px 10px var(--red-glow)}
+  .pin .core,.pin .ring{pointer-events:none}
+  .pin .ring{position:absolute;inset:0;border-radius:50%;border:1px solid var(--red);opacity:0}
+  .pin.live .ring{animation:ping 2.1s cubic-bezier(.15,.6,.3,1) infinite}
+  .pin.live .ring:nth-child(3){animation-delay:.7s}
+  @keyframes ping{0%{transform:scale(.55);opacity:.85}70%{transform:scale(3.1);opacity:0}100%{opacity:0}}
+  .pin:focus-visible,.chip:focus-visible,#tour:focus-visible,#next:focus-visible,#x:focus-visible{
+    outline:2px solid var(--accent);outline-offset:3px;border-radius:2px}
+  .pin.occluded{opacity:.26}
+  .pin.occluded .ring{display:none}
+
+  .tag{position:absolute;left:16px;top:50%;transform:translateY(-50%) translateX(-6px);white-space:nowrap;
+       background:var(--panel);border:1px solid var(--edge);border-left:2px solid var(--red);
+       backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+       padding:6px 11px 6px 10px;border-radius:2px;opacity:0;pointer-events:none;
+       transition:opacity .4s ease,transform .4s cubic-bezier(.22,.9,.28,1)}
+  .pin.live .tag{opacity:1;transform:translateY(-50%) translateX(0);pointer-events:auto}
+  .tag .zh{font-size:12px;font-weight:500;letter-spacing:.02em;display:block;line-height:1.2}
+  .tag .go{font-family:var(--mono);font-size:9px;color:var(--accent);letter-spacing:.16em;margin-top:3px;display:block}
+
+  /* ---------- modal ---------- */
+  #veil{position:fixed;inset:0;z-index:40;background:rgba(248,249,251,0);backdrop-filter:blur(0px);
+        -webkit-backdrop-filter:blur(0px);opacity:0;visibility:hidden;
+        transition:opacity .34s ease,visibility .34s,backdrop-filter .34s ease,background .34s ease}
+  #veil.open{opacity:1;visibility:visible;background:rgba(248,249,251,.62);backdrop-filter:blur(7px);
+             -webkit-backdrop-filter:blur(7px)}
+  #modal{position:fixed;z-index:41;top:50%;left:50%;width:min(560px,calc(100vw - 44px));
+         max-height:min(78vh,720px);transform:translate(-50%,-50%) scale(.92);opacity:0;visibility:hidden;
+         background:var(--panel-solid);border:1px solid var(--edge);border-radius:3px;overflow:hidden;
+         box-shadow:0 30px 80px -24px rgba(18,24,34,.34),0 2px 8px rgba(18,24,34,.06);display:flex;flex-direction:column;
+         transition:opacity .3s ease,transform .38s cubic-bezier(.16,.9,.24,1),visibility .38s}
+  #modal.open{opacity:1;visibility:visible;transform:translate(-50%,-50%) scale(1)}
+  #modal .top{padding:26px 30px 20px;border-bottom:1px solid var(--edge);position:relative;flex:none}
+  #modal .kicker{font-family:var(--mono);font-size:9px;letter-spacing:.3em;color:var(--accent);margin-bottom:11px}
+  #modal h3{margin:0;font-size:25px;font-weight:600;letter-spacing:.01em;line-height:1.2}
+  #modal .en{margin-top:6px;font-size:12px;color:var(--ink-faint);letter-spacing:.05em}
+  #x{font:inherit;position:absolute;top:22px;right:24px;width:28px;height:28px;border:1px solid var(--edge);background:none;
+     color:var(--ink-faint);cursor:pointer;border-radius:2px;font-size:15px;line-height:1;transition:.2s;
+     display:grid;place-items:center;padding:0}
+  #x:hover{border-color:var(--edge-hi);color:var(--ink)}
+  #modal .body{padding:22px 30px 28px;overflow-y:auto;flex:1}
+  #facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(118px,1fr));gap:1px;background:var(--edge);
+          border:1px solid var(--edge);margin-bottom:22px}
+  #facts div{background:var(--panel-solid);padding:11px 13px}
+  #facts dt{font-family:var(--mono);font-size:9px;letter-spacing:.16em;color:var(--ink-faint);margin-bottom:5px}
+  #facts dd{margin:0;font-size:13px;font-weight:500;letter-spacing:.01em}
+  #prose p{margin:0 0 13px;font-size:13.5px;line-height:1.78;color:var(--ink-dim);letter-spacing:.01em}
+  #prose p:last-child{margin-bottom:0}
+  #prose strong{color:var(--ink);font-weight:500}
+  #modal .foot{padding:14px 30px;border-top:1px solid var(--edge);display:flex;justify-content:space-between;
+               align-items:center;flex:none}
+  #modal .coord{font-family:var(--mono);font-size:9.5px;color:var(--ink-faint);letter-spacing:.1em}
+  #next{font-family:var(--mono);border:1px solid var(--accent);background:none;color:var(--accent);font-family:var(--mono);font-size:10px;
+        letter-spacing:.18em;padding:8px 15px;border-radius:2px;cursor:pointer;transition:.2s}
+  #next:hover{background:rgba(237,122,25,.07)}
+
+  #hint{position:fixed;left:26px;bottom:96px;z-index:20;font-family:var(--mono);font-size:9.5px;
+        letter-spacing:.14em;color:var(--ink-faint);line-height:1.9;pointer-events:none;opacity:.72}
+  @media(prefers-reduced-motion:reduce){
+    .pin.live .ring{animation:none;opacity:0}
+    #modal,#veil,#boot,.chip,.tag,.pin .inner{transition-duration:.01ms !important}
+  }
+  @media(max-width:720px){
+    #brand{top:16px;left:16px} #brand h2{font-size:17px}
+    #hud,#compass,#hint{display:none}
+    .chip{min-width:0;padding:7px 10px} .chip .en{display:none}
+    #modal .top{padding:20px 22px 16px} #modal h3{font-size:20px} #modal .body{padding:18px 22px 22px}
+    #modal .foot{padding:12px 22px}
+  }
+
+  #viewbar{position:fixed;top:118px;left:26px;z-index:25;display:flex;gap:4px;padding:4px;background:var(--panel);border:1px solid var(--edge);backdrop-filter:blur(16px);border-radius:5px}
+  #viewbar button,#maptools button{border:0;background:transparent;padding:9px 12px;color:var(--ink-dim);font:12px var(--font);cursor:pointer;border-radius:3px}
+  #viewbar button[aria-pressed="true"]{background:var(--ink);color:white}
+  button:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+  #maptools{position:fixed;left:26px;top:173px;z-index:25;display:flex;gap:8px;align-items:center;background:var(--panel);padding:5px 9px;border:1px solid var(--edge);border-radius:4px;font-size:11px}
+  #maptools label{display:flex;align-items:center;gap:6px;cursor:pointer} #maptools input{accent-color:var(--accent)}
+  #maptools button{padding:5px 7px;font-size:11px}
+  #mapnote{position:fixed;left:26px;bottom:121px;z-index:20;font-size:10px;color:var(--ink-dim);background:var(--panel);padding:6px 9px;border-radius:3px;max-width:calc(100vw - 52px)}
+  #mapstatus{position:fixed;right:16px;bottom:111px;z-index:22;font:10px var(--font);background:var(--panel);padding:5px 8px;max-width:280px}
+  #mapcredit{position:fixed;right:10px;bottom:89px;z-index:22;font:11px var(--font);background:rgba(255,255,255,.94);padding:4px 6px}
+  #mapcredit a{color:#374f61}
+  #flatmap .leaflet-tile-pane{filter:grayscale(1) brightness(1.04) contrast(.92)}
+  #flatmap{position:fixed;inset:0 0 88px;z-index:5;background:#fafafa;visibility:hidden}
+  body.flat #flatmap{visibility:visible} body.flat #stage{visibility:hidden}
+  body.flat #hud,body.flat #compass,body.flat #hint,body.flat #ground-option{display:none}
+  body.flat #brand{background:var(--panel);padding:10px 14px;left:12px;top:14px;border-radius:4px}
+  .map-pin{background:transparent;border:0}
+  .map-pin span{display:grid;place-items:center;width:28px;height:28px;background:white;color:var(--ink);border:1px solid #666;border-radius:50%;box-shadow:0 2px 10px #0003;font:11px var(--mono)}
+  .map-pin.selected span{background:var(--accent);color:white;border:2px solid white;transform:scale(1.15)}
+  .leaflet-control-zoom{margin-top:160px!important}
+  #flatmap .leaflet-control-attribution{display:none} /* Shared attribution remains visible in both views. */
+  #hint{bottom:151px}
+  #rail{background:linear-gradient(0deg,#fff 75%,#fffffff0);padding-top:10px}
+  @media(max-width:1000px){#rail{justify-content:flex-start;flex-wrap:nowrap;overflow-x:auto;padding-bottom:12px} .chip{flex-shrink:0} #tour{flex-shrink:0} }
+  @media(max-width:720px){
+    #viewbar{left:16px;top:96px} #maptools{left:16px;top:149px} #mapnote{left:16px;bottom:115px;font-size:9px;max-width:calc(100vw - 32px)}
+    #mapcredit{bottom:65px;font-size:10px} #mapstatus{bottom:86px;right:10px;font-size:9px}
+    #flatmap{bottom:64px} #rail{padding-left:12px;padding-right:12px} #brand .sub{font-size:9px}
+  }
+
+</style>
+
+<div id="stage"><div id="gl"></div><div id="scrim"></div><div id="labels"></div></div>
+
+<div id="flatmap" aria-label="Partick 真实平面地图"></div>
+<div id="viewbar" role="group" aria-label="视图切换">
+  <button id="view3d" aria-pressed="true">三维模型</button><button id="view2d" aria-pressed="false">平面地图</button>
+</div>
+<div id="maptools"><label id="ground-option"><input id="ground-toggle" type="checkbox" checked>道路</label><label><input id="route-toggle" type="checkbox" checked>路线</label><button id="overview">全区总览</button><button id="retry-map" hidden>重试地图</button></div>
+<div id="mapnote">建筑轮廓：OpenStreetMap · 未标注高度按层数或类型估算</div>
+<div id="mapstatus" role="status" aria-live="polite">建筑与道路</div>
+<div id="mapcredit">© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors</div>
+<div id="brand">
+  <div class="k">PARTICK · GLASGOW</div>
+  <h2>Partick Trinity 导航</h2>
+  <div class="sub">55.869°N &nbsp;4.306°W</div>
+</div>
+
+<div id="hud">
+  <div class="row"><span class="state" id="hState">待机</span></div>
+  <div class="row"><span>DIST</span><b id="hDist">—</b></div>
+  <div class="row"><span>ALT</span><b id="hAlt">—</b></div>
+</div>
+<svg id="compass" viewBox="0 0 44 44">
+  <circle cx="22" cy="22" r="17" fill="none" stroke="rgba(18,24,34,.16)"/>
+  <g id="needle">
+    <path d="M22 7 L25.4 22 L22 19 L18.6 22 Z" fill="#ed7a19"/>
+    <path d="M22 37 L18.6 22 L22 25 L25.4 22 Z" fill="rgba(18,24,34,.22)"/>
+  </g>
+  <text x="22" y="5.5" text-anchor="middle" font-size="6.5" fill="#959ba6" font-family="monospace">N</text>
+</svg>
+
+<div id="hint">← → 切换地标<br>SPACE 自动巡游<br>拖拽旋转 · 滚轮缩放</div>
+
+<div id="rail"></div>
+
+<div id="veil"></div>
+<div id="modal" role="dialog" aria-modal="true" aria-labelledby="mTitle">
+  <div class="top">
+    <div class="kicker" id="mKick"></div>
+    <h3 id="mTitle"></h3>
+    <div class="en" id="mEn"></div>
+    <button id="x" aria-label="关闭">✕</button>
+  </div>
+  <div class="body">
+    <dl id="facts"></dl>
+    <div id="prose"></div>
+  </div>
+  <div class="foot">
+    <span class="coord" id="mCoord"></span>
+    <button id="next">下一站 →</button>
+  </div>
+</div>
+
+<div id="boot"><div class="bw">
+  <h1>PARTICK TRINITY</h1><p>CRAFTING THE WEST END</p>
+  <div id="bar"><i id="barFill"></i></div>
+</div></div>
+
+<script type="importmap">
+{"imports":{
+  "three":"https://cdn.jsdelivr.net/npm/three@0.160.1/build/three.module.js",
+  "three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.1/examples/jsm/"
+}}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import FOOTPRINT_DATA from './building-footprints.js';
+import STREET_DATA from './street-route-data.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+
+/* ═══════════════════════════════════════════════════════════════════════
+   1 · GEO — 真实经纬度数据层
+   建筑与手绘街道坐标为近似值；真实底图使用独立的 OSM 数据。
+   投影：以 ORIGIN 为切点的局部等距平面，1 场景单位 = 1 米，-Z 指向正北。
+   ═══════════════════════════════════════════════════════════════════════ */
+const ORIGIN = { lat: 55.8690, lon: -4.3040 };
+const R_EARTH = 6378137, D2R = Math.PI / 180;
+const COS0 = Math.cos(ORIGIN.lat * D2R);
+
+/** [lat,lon] → THREE.Vector3(米)，y 由调用方给 */
+const gp = (lat, lon, y = 0) => new THREE.Vector3(
+  (lon - ORIGIN.lon) * D2R * R_EARTH * COS0, y, -(lat - ORIGIN.lat) * D2R * R_EARTH
+);
+const fmtLL = (lat, lon) =>
+  `${Math.abs(lat).toFixed(4)}°${lat >= 0 ? 'N' : 'S'}  ${Math.abs(lon).toFixed(4)}°${lon >= 0 ? 'E' : 'W'}`;
+
+/* ---- 河流 ---------------------------------------------------------- */
+const WATER = [
+  { name: 'River Clyde', width: 170, pts: [
+    [55.8632,-4.3320],[55.8629,-4.3210],[55.8635,-4.3120],[55.8643,-4.3048],
+    [55.8649,-4.2960],[55.8653,-4.2880],[55.8655,-4.2790] ] },
+  { name: 'River Kelvin', width: 34, pts: [
+    [55.8745,-4.2880],[55.8722,-4.2892],[55.8702,-4.2918],[55.8688,-4.2946],
+    [55.8674,-4.2986],[55.8663,-4.3024],[55.8652,-4.3052] ] },
+];
+
+/* ---- 绿地 ---------------------------------------------------------- */
+const PARKS = [
+  { name:'Kelvingrove Park', pts:[[55.8672,-4.2900],[55.8676,-4.2836],[55.8712,-4.2812],
+      [55.8740,-4.2846],[55.8734,-4.2896],[55.8700,-4.2912]] },
+  { name:'Victoria Park',    pts:[[55.8742,-4.3346],[55.8752,-4.3250],[55.8730,-4.3222],[55.8722,-4.3320]] },
+  { name:'Mansfield Park',   pts:[[55.8690,-4.3084],[55.8694,-4.3062],[55.8684,-4.3056],[55.8681,-4.3080]] },
+  { name:'Pointhouse Quay',  pts:[[55.8664,-4.3096],[55.8666,-4.3034],[55.8650,-4.3028],[55.8646,-4.3092]] },
+];
+
+/* ---- 街道网（真实走向的骨架） --------------------------------------- */
+const ROADS = [
+  // 主干
+  { n:'Dumbarton Road', w:20, cls:'main', pts:[[55.8690,-4.2952],[55.8695,-4.3008],[55.8699,-4.3062],
+      [55.8701,-4.3104],[55.8702,-4.3162],[55.8700,-4.3232],[55.8698,-4.3300]] },
+  { n:'Argyle Street',  w:19, cls:'main', pts:[[55.8690,-4.2952],[55.8688,-4.2900],[55.8686,-4.2846]] },
+  { n:'Byres Road',     w:17, cls:'main', pts:[[55.8710,-4.2998],[55.8734,-4.2994],[55.8762,-4.2990],[55.8788,-4.2986]] },
+  { n:'Crow Road',      w:17, cls:'main', pts:[[55.8699,-4.3232],[55.8728,-4.3236],[55.8760,-4.3240],[55.8790,-4.3244]] },
+  { n:'Great Western Rd',w:20,cls:'main', pts:[[55.8792,-4.2900],[55.8790,-4.2988],[55.8788,-4.3080],[55.8786,-4.3180]] },
+  { n:'Castlebank St',  w:15, cls:'main', pts:[[55.8676,-4.3236],[55.8670,-4.3160],[55.8662,-4.3096],
+      [55.8654,-4.3050],[55.8658,-4.3010],[55.8672,-4.2978]] },
+  { n:'Govan Road',     w:16, cls:'main', pts:[[55.8626,-4.3250],[55.8618,-4.3140],
+      [55.8612,-4.3040],[55.8608,-4.2940]] },
+  { n:'Water Row',      w:11, cls:'sec',  pts:[[55.8622,-4.3096],[55.8606,-4.3092]] },
+  { n:'Highburgh Road', w:13, cls:'sec',  pts:[[55.8712,-4.3006],[55.8716,-4.3054],[55.8718,-4.3096]] },
+  { n:'Thornwood Ave',  w:13, cls:'sec',  pts:[[55.8702,-4.3208],[55.8722,-4.3212],[55.8740,-4.3216]] },
+  // Partick 老网格：Dumbarton Rd 南侧成排的排屋支路
+  { n:'Benalder Street',w:11, cls:'sec',  pts:[[55.8697,-4.2984],[55.8678,-4.2988]] },
+  { n:'Purdon Street',  w:10, cls:'sec',  pts:[[55.8698,-4.3020],[55.8681,-4.3023]] },
+  { n:'Anderson Street',w:10, cls:'sec',  pts:[[55.8699,-4.3044],[55.8682,-4.3047]] },
+  { n:'Merkland Street',w:11, cls:'sec',  pts:[[55.8700,-4.3078],[55.8681,-4.3081]] },
+  { n:'Beith Street',   w:10, cls:'sec',  pts:[[55.8700,-4.3096],[55.8684,-4.3099]] },
+  { n:'Hayburn Street', w:11, cls:'sec',  pts:[[55.8701,-4.3140],[55.8680,-4.3143]] },
+  { n:'Sandy Road',     w:10, cls:'sec',  pts:[[55.8701,-4.3184],[55.8684,-4.3187]] },
+  // 北侧
+  { n:'Peel Street',    w:10, cls:'sec',  pts:[[55.8702,-4.3060],[55.8716,-4.3058]] },
+  { n:'White Street',   w:10, cls:'sec',  pts:[[55.8703,-4.3040],[55.8717,-4.3038]] },
+  { n:'Chancellor St',  w:10, cls:'sec',  pts:[[55.8704,-4.3020],[55.8716,-4.3018]] },
+  { n:'Apsley Street',  w:10, cls:'sec',  pts:[[55.8703,-4.3122],[55.8722,-4.3119]] },
+  { n:'Gardner Street', w:10, cls:'sec',  pts:[[55.8704,-4.3134],[55.8730,-4.3130]] },
+  { n:'Rosevale Street',w:10, cls:'sec',  pts:[[55.8702,-4.3172],[55.8720,-4.3169]] },
+  { n:'Havelock Street',w:10, cls:'sec',  pts:[[55.8722,-4.2968],[55.8736,-4.2966]] },
+  { n:'University Ave', w:13, cls:'sec',  pts:[[55.8722,-4.2932],[55.8720,-4.2876],[55.8716,-4.2842]] },
+  { n:'Kelvin Way',     w:12, cls:'sec',  pts:[[55.8686,-4.2874],[55.8706,-4.2866],[55.8728,-4.2860]] },
+];
+
+/* ---- 铁路（低地线，Partick 站沿线） --------------------------------- */
+const RAIL = { w:9, pts:[[55.8686,-4.2900],[55.8690,-4.2966],[55.8694,-4.3040],[55.8697,-4.3098],
+  [55.8696,-4.3170],[55.8692,-4.3250],[55.8688,-4.3330]] };
+
+/* ═══════════════════════════════════════════════════════════════════════
+   2 · LANDMARKS — 地标 + 相机机位 + 详情文案
+   cam: { bearing 观察方位角(度,0=正北,顺时针), dist 水平距离(m), height 相机高(m), look 注视点高(m) }
+   ═══════════════════════════════════════════════════════════════════════ */
+const LANDMARKS = [
+  {
+    id:'riverside', zh:'河畔博物馆', en:'Riverside Museum', kind:'riverside',
+    lat:55.8654, lon:-4.3064, rot:-14, anchor:34,
+    cam:{ bearing:200, dist:230, height:96, look:20 },
+    kicker:'STOP 01 · POINTHOUSE QUAY',
+    facts:[['落成','2011'],['建筑师','Zaha Hadid'],['类型','交通博物馆'],['屋面','锌板锯齿']],
+    prose:[
+      '<strong>河畔博物馆</strong>坐落在 Pointhouse Quay——凯尔文河汇入克莱德河的三角尖端上，是扎哈·哈迪德建筑事务所在英国完成的第一座大型公共博物馆。',
+      '那道著名的锯齿形剖面并不是纯造型：它把博物馆做成一条贯通的隧道，一端开向城市，一端开向河，人从街区走进去，最后被推到水边。屋面覆锌板，起伏的轮廓在克莱德河对岸远远就能认出来。',
+      '馆内收藏了格拉斯哥的交通史——有轨电车、蒸汽机车、船模，以及一条复原的 20 世纪初街道。2013 年获欧洲年度博物馆奖。'
+    ]
+  },
+  {
+    id:'glenlee', zh:'格伦利号帆船', en:'The Tall Ship Glenlee', kind:'ship',
+    lat:55.8647, lon:-4.3047, rot:-16, anchor:40,
+    cam:{ bearing:150, dist:150, height:58, look:16 },
+    kicker:'STOP 02 · MOORED AT PONTOON',
+    facts:[['下水','1896'],['船型','三桅巴克帆船'],['建造地','Port Glasgow'],['船长','约 74 m']],
+    prose:[
+      '<strong>格伦利号</strong>1896 年在克莱德河上游的 Port Glasgow 下水，是目前仍浮于水上的五艘克莱德建造帆船之一。',
+      '它在商船生涯里四次绕过合恩角，环球航行。1922 年被西班牙海军买下，改名 <em>Galatea</em> 作为训练舰使用了半个多世纪，1993 年被一个格拉斯哥信托基金从塞维利亚的拆船命运中买回，拖回故乡修复。',
+      '如今它系泊在河畔博物馆正前方的浮桥上——一艘克莱德造的船，回到了克莱德河，停在讲述克莱德工业史的博物馆门口。'
+    ]
+  },
+  {
+    id:'kelvingrove', zh:'凯尔文格罗夫美术馆', en:'Kelvingrove Art Gallery & Museum', kind:'kelvingrove',
+    lat:55.8686, lon:-4.2905, rot:0, anchor:52,
+    cam:{ bearing:170, dist:270, height:118, look:26 },
+    kicker:'STOP 03 · ARGYLE STREET',
+    facts:[['开馆','1901'],['风格','西班牙巴洛克复兴'],['石材','红砂岩'],['展厅','22 间']],
+    prose:[
+      '<strong>凯尔文格罗夫</strong>为 1901 年格拉斯哥国际博览会而建，通体使用 Locharbriggs 红砂岩，是格拉斯哥最容易辨认的建筑之一。',
+      '关于它"造反了、建筑师跳塔"的传说流传了一百多年，但那是彻头彻尾的都市传奇——主入口本来就朝向凯尔文格罗夫公园一侧，只是后来人们习惯从 Argyle Street 进来，才误以为它"背对着"大街。',
+      '馆藏横跨自然史、军械、苏格兰艺术与欧洲大师作品，其中最有名的是达利的《圣十字若望的基督》，以及悬在西厅上方的一架喷火战斗机。中央大厅的管风琴每天有免费演奏。免费开放。'
+    ]
+  },
+  {
+    id:'kelvinhall', zh:'凯尔文厅', en:'Kelvin Hall', kind:'kelvinhall',
+    lat:55.8697, lon:-4.2949, rot:0, anchor:32,
+    cam:{ bearing:210, dist:210, height:88, look:16 },
+    kicker:'STOP 04 · ARGYLE STREET',
+    facts:[['落成','1927'],['原用途','展览馆'],['改造','2016'],['现状','档案 · 收藏 · 运动']],
+    prose:[
+      '<strong>凯尔文厅</strong>建于 1927 年，取代了 1925 年被火烧毁的前身，是当年英国最大的展览场馆之一——车展、马戏、拳赛、集会都在这里发生。',
+      '1987 至 2010 年间，它是格拉斯哥交通博物馆的所在地。藏品后来搬去了河对面新建的河畔博物馆，这栋巨大的空壳随即进入了长达数年的重新定位。',
+      '2016 年完成的改造把它变成一座"看不见的博物馆"：格拉斯哥大学亨特博物馆的开放式藏品库、苏格兰国家图书馆的活动影像档案馆，以及一座公共体育馆，共用同一个屋顶。'
+    ]
+  },
+  {
+    id:'unitower', zh:'格拉斯哥大学主楼塔', en:'University of Glasgow Tower', kind:'unitower',
+    lat:55.8721, lon:-4.2883, rot:0, anchor:85,
+    cam:{ bearing:200, dist:300, height:170, look:56 },
+    kicker:'STOP 05 · GILMOREHILL',
+    facts:[['建校','1451'],['迁址','1870'],['建筑师','G. G. Scott'],['塔尖','约 85 m']],
+    prose:[
+      '<strong>格拉斯哥大学</strong>成立于 1451 年，是英语世界第四古老的大学。1870 年从高街迁至 Gilmorehill 这片高地，新校舍由乔治·吉尔伯特·斯科特爵士以哥特复兴式设计。',
+      '中央塔楼的石制尖顶由他的儿子约翰·奥尔德里德·斯科特在 1887 年完成，高约 85 米。这栋楼常被称为英国仅次于威斯敏斯特宫的哥特复兴式建筑。',
+      '塔楼下方是那条著名的拱廊——<em>the Cloisters</em>，用一排细柱把东西两个方庭连起来。从 Partick 任何一条街往东北看，这根尖顶都是天际线上最高的那个点。'
+    ]
+  },
+  {
+    id:'station', zh:'帕蒂克车站', en:'Partick Interchange', kind:'station',
+    lat:55.8697, lon:-4.3095, rot:8, anchor:24,
+    cam:{ bearing:230, dist:170, height:70, look:12 },
+    kicker:'STOP 06 · DUMBARTON ROAD',
+    facts:[['启用','1979'],['类型','地铁 · 铁路换乘'],['地铁线','Subway 环线'],['铁路','Argyle / North Clyde']],
+    prose:[
+      '<strong>帕蒂克站</strong>是格拉斯哥少数几个把地铁和铁路叠在同一座建筑里的换乘点，也是整个西区的交通心脏。',
+      '它 1979 年启用，取代了两个旧站：一个是 1886 年就在的 Partickhill 铁路站，一个是隔壁的 Merkland Street 地铁站。为了让两条系统换乘，规划者干脆把它们合并成了一栋楼。',
+      '从这里出发，地铁十五分钟绕城一圈，火车向西通往克莱德河下游的造船区。Partick 之所以是 Partick，很大程度上就是因为这个位置——它是西区通往河口的闸门。'
+    ]
+  },
+  {
+    // Position reference: https://www.trove.scot/place/162033
+    id:'burghhall', zh:'帕蒂克市政厅', en:'Partick Burgh Hall', kind:'burghhall',
+    lat:55.87136, lon:-4.30862, rot:-8, anchor:30,
+    cam:{ bearing:250, dist:150, height:62, look:14 },
+    kicker:'STOP 07 · BURGH HALL STREET',
+    facts:[['落成','1872'],['建筑师','William Leiper'],['保护级别','Category A'],['自治期','1852–1912']],
+    prose:[
+      '<strong>帕蒂克市政厅</strong>提醒着一件容易被忘记的事：Partick 曾经不是格拉斯哥的一部分。它在 1852 年成为独立自治市镇，直到 1912 年才被并入格拉斯哥。',
+      '这栋 1872 年落成的建筑由 William Leiper 设计，是那段独立岁月的市政中心——议事、登记、庆典都在这里。今天它是 Category A 登录建筑，作为社区活动与婚礼场地继续使用。',
+      '它的尺度很能说明问题：不大，但认真。一个自认为是个城镇、而不是某个大城市郊区的地方，才会给自己盖这样一栋楼。'
+    ]
+  },
+  {
+    id:'byres', zh:'拜尔斯路', en:'Byres Road', kind:'tenementrow',
+    lat:55.8736, lon:-4.2994, rot:2, anchor:26,
+    cam:{ bearing:120, dist:220, height:96, look:14 },
+    kicker:'STOP 08 · WEST END SPINE',
+    facts:[['走向','南北 约 1 km'],['沿街','维多利亚排屋'],['支巷','Ashton Lane'],['北端','Òran Mór']],
+    prose:[
+      '<strong>拜尔斯路</strong>把 Dumbarton Road 和 Great Western Road 南北串起来，是格拉斯哥西区真正意义上的主街。',
+      '两侧是连续的四层维多利亚排屋——底层商铺、上面三层住人。这种"沿街商铺 + 楼上公寓"的砂岩排屋是格拉斯哥的城市原型，Partick 的每一条支路都是它的重复。',
+      '路东侧岔出 Ashton Lane，一条铺石板的后巷，酒吧和电影院挤在原来的马厩里。北端路口是 Òran Mór——一座 19 世纪教堂改成的酒吧与演出场地，穹顶上有 Alasdair Gray 画的壁画。'
+    ]
+  },
+];
+
+// Landmarks and buildings share the same OSM source coordinates.
+for(const lm of LANDMARKS){
+  const mapped=FOOTPRINT_DATA.landmarks[lm.id];
+  if(mapped){lm.lat=mapped.lat;lm.lon=mapped.lon;lm.rot=0;lm.osmId=mapped.osmId;}
+}
+/* ═══════════════════════════════════════════════════════════════════════
+   3 · ENGINE — 渲染器 / 相机 / 灯光 / 后期
+   ═══════════════════════════════════════════════════════════════════════ */
+/* 白模配色：地面与水是纸面上的浅色块，建筑的颜色全部经 whiteModel() 抽色，
+   源色只用来决定明度次序（墙 > 屋面 > 开口），橙色是场景里唯一的颜色。 */
+const PAL = {
+  fog:0xffffff,
+  ground:0xe1e4e9, park:0xd6dfd2, water:0xc2d1e0,
+  roadMain:0xcfd3da, roadSec:0xd8dbe1, rail:0xc9cdd4,
+  sandBlonde:0xcbb38b, sandRed:0xa8654f, sandGrey:0x8f9aa6, modern:0x76828f,
+  roof:0x3c434e, accent:0xed7a19, accentDeep:0xa84b0d, red:0xed7a19,
+};
+
+const vw = () => Math.max(1, innerWidth), vh = () => Math.max(1, innerHeight);
+const stage = document.getElementById('gl');
+const renderer = new THREE.WebGLRenderer({ antialias:false, powerPreference:'high-performance' });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(vw(), vh());
+renderer.toneMapping = THREE.NoToneMapping;   // ACES 会把白模压灰、把橙色去饱和
+renderer.toneMappingExposure = 1.0;
+renderer.setClearColor(0xffffff, 1);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+stage.appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer({ element: document.getElementById('labels') });
+labelRenderer.setSize(vw(), vh());
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.FogExp2(PAL.fog, 0.00027);
+
+// 渐变天穹：地平线暖、天顶冷，给低多边形体量一个可读的背景
+const sky = new THREE.Mesh(
+  new THREE.SphereGeometry(4200, 24, 16),
+  new THREE.ShaderMaterial({
+    uniforms:{ uTop:{value:new THREE.Color(0xe8ecf2)}, uMid:{value:new THREE.Color(0xf6f7f9)},
+               uHz:{value:new THREE.Color(0xffffff)}, uSun:{value:new THREE.Color(0x000000)},
+               uSunDir:{value:new THREE.Vector3()} },
+    vertexShader:`varying vec3 vD; void main(){ vD=normalize(position);
+      gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
+    fragmentShader:`uniform vec3 uTop,uMid,uHz,uSun; uniform vec3 uSunDir; varying vec3 vD;
+      void main(){
+        float h = clamp(vD.y*0.5+0.5, 0.0, 1.0);
+        vec3 c = mix(uHz, uMid, smoothstep(0.46, 0.68, h));
+        c = mix(c, uTop, smoothstep(0.62, 1.0, h));
+        gl_FragColor = vec4(c, 1.0);
+      }`,
+    side:THREE.BackSide, depthWrite:false, fog:false,
+  }));
+sky.renderOrder = -10;
+scene.add(sky);
+
+const camera = new THREE.PerspectiveCamera(55, vw()/vh(), 1, 9000);
+camera.position.set(-380, 460, 620);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true; controls.dampingFactor = 0.055;
+controls.maxPolarAngle = Math.PI/2 - 0.045;
+controls.minDistance = 45; controls.maxDistance = 1900;
+controls.enablePan = true; controls.enabled = false;
+
+/* 灯光：低角度暖阳（西侧）+ 冷天光。阴影相机跟随当前焦点，
+   500m 见方 / 2048 贴图 ≈ 0.24 m per texel，够看清地标投影。 */
+const hemi = new THREE.HemisphereLight(0xe4ecf6, 0xcbc7c0, 0.88);
+scene.add(hemi);
+const sun = new THREE.DirectionalLight(0xfff6ea, 2.70);
+const SUN_DIR = new THREE.Vector3(-0.78, 0.42, -0.26).normalize();
+sky.material.uniforms.uSunDir.value.copy(SUN_DIR);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.camera.near = 10; sun.shadow.camera.far = 3200;
+sun.shadow.bias = -0.0009; sun.shadow.normalBias = 0.9;
+let shadowSpan = 300;
+scene.add(sun, sun.target);
+const fill = new THREE.DirectionalLight(0xdde7f4, 0.22);
+fill.position.copy(SUN_DIR).multiplyScalar(-700).setY(320); scene.add(fill);
+
+function aimShadow(p, span) {
+  sun.target.position.set(p.x, 0, p.z);
+  sun.position.copy(sun.target.position).addScaledVector(SUN_DIR, 1400);
+  if (span !== undefined && Math.abs(span - shadowSpan) > 4){
+    shadowSpan = span;
+    const c = sun.shadow.camera;
+    c.left = -span; c.right = span; c.top = span; c.bottom = -span;
+    c.updateProjectionMatrix();
+  }
+}
+aimShadow(new THREE.Vector3(), 300);
+
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+composer.addPass(new SMAAPass(vw()*renderer.getPixelRatio(), vh()*renderer.getPixelRatio()));
+composer.addPass(new OutputPass());
+
+/* ═══════════════════════════════════════════════════════════════════════
+   4 · MATERIALS — 焦点衰减：非当前地标周边的城市会压暗、退到背景里
+   通过 onBeforeCompile 注入到标准 PBR 材质，保留正常光照。
+   ═══════════════════════════════════════════════════════════════════════ */
+const FOCUS = {
+  uFocus:        { value: new THREE.Vector3(0, 0, 0) },
+  uFocusAmount:  { value: 0 },
+  uFocusInner:   { value: 95 },
+  uFocusOuter:   { value: 330 },
+  // 注入点在 colorspace_fragment 之后，所以这是输出（sRGB）空间的纸面色
+  uPaper:        { value: new THREE.Vector3(0.975, 0.977, 0.982) },
+};
+function withFocusDim(mat) {
+  mat.onBeforeCompile = (sh) => {
+    Object.assign(sh.uniforms, FOCUS);
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vWP;')
+      .replace('#include <worldpos_vertex>',
+               '#include <worldpos_vertex>\n  vWP = ( modelMatrix * vec4( transformed, 1.0 ) ).xyz;');
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>',
+        '#include <common>\nvarying vec3 vWP;\nuniform vec3 uFocus;\nuniform float uFocusAmount;\n' +
+        'uniform float uFocusInner;\nuniform float uFocusOuter;\nuniform vec3 uPaper;')
+      .replace('#include <dithering_fragment>',
+        '  float _d = distance( vWP.xz, uFocus.xz );\n' +
+        '  float _f = smoothstep( uFocusInner, uFocusOuter, _d ) * uFocusAmount;\n' +
+        '  gl_FragColor.rgb = mix( gl_FragColor.rgb, uPaper, _f );\n' +
+        '#include <dithering_fragment>');
+  };
+  mat.customProgramCacheKey = () => 'focusfade';
+  return mat;
+}
+
+const matCity = withFocusDim(new THREE.MeshStandardMaterial({
+  vertexColors:true, roughness:0.92, metalness:0.0, flatShading:true }));
+const matGround = withFocusDim(new THREE.MeshStandardMaterial({
+  vertexColors:true, roughness:1.0, metalness:0.0, flatShading:true }));
+const matLandmark = new THREE.MeshStandardMaterial({
+  vertexColors:true, roughness:0.80, metalness:0.0, flatShading:true, side:THREE.DoubleSide });
+const C_WHITE = new THREE.Color(0xffffff), C_ACCENT = new THREE.Color(0xed7a19);
+
+/* 水面：两组错频正弦做微弱波光，不用贴图 */
+const matWater = new THREE.ShaderMaterial({
+  uniforms:{ uTime:{value:0}, uBase:{value:new THREE.Color(PAL.water)},
+             uGlint:{value:new THREE.Color(0xffffff)}, uFogC:{value:new THREE.Color(PAL.fog)},
+             uFogD:{value:scene.fog.density} },
+  vertexShader:`varying vec3 vP; varying float vFog;
+    void main(){ vP=(modelMatrix*vec4(position,1.0)).xyz;
+      vec4 mv=modelViewMatrix*vec4(position,1.0); vFog=-mv.z; gl_Position=projectionMatrix*mv; }`,
+  fragmentShader:`uniform float uTime; uniform vec3 uBase,uGlint,uFogC; uniform float uFogD;
+    varying vec3 vP; varying float vFog;
+    // 正弦叠加在大面积水面上会露出规律网格，改用两层值噪声
+    float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+    float vnoise(vec2 p){
+      vec2 i = floor(p), f = fract(p); f = f*f*(3.0 - 2.0*f);
+      return mix(mix(hash(i), hash(i+vec2(1.0,0.0)), f.x),
+                 mix(hash(i+vec2(0.0,1.0)), hash(i+vec2(1.0,1.0)), f.x), f.y);
+    }
+    void main(){
+      vec2 q = vP.xz * 0.020;
+      float n = vnoise(q + vec2(uTime*0.055, -uTime*0.038)) * 0.62
+              + vnoise(q*2.7 - vec2(uTime*0.031, uTime*0.047)) * 0.38;
+      float g = smoothstep(0.58, 0.90, n);
+      float sheen = smoothstep(0.30, 0.95, vnoise(q*0.35 + uTime*0.012));
+      vec3 c = mix(uBase, uGlint, g*0.34 + sheen*0.16);
+      float f = 1.0 - exp(-uFogD*uFogD*vFog*vFog);
+      gl_FragColor = vec4(mix(c, uFogC, clamp(f,0.0,1.0)), 1.0);
+    }`,
+});
+
+/* ═══════════════════════════════════════════════════════════════════════
+   5 · GEOMETRY HELPERS — 手工合并顶点色几何，控制 draw call
+   ═══════════════════════════════════════════════════════════════════════ */
+const UNIT_BOX = new THREE.BoxGeometry(1,1,1).toNonIndexed();
+
+/* 白模抽色。丢掉色相，只把源色的相对亮度映射到一段很窄的白灰值域，
+   这样墙体 / 屋面 / 开口之间的明度次序还在，体量靠平面着色和底部渐深读出来。 */
+const WM_LO = new THREE.Color(0x8f959e), WM_HI = new THREE.Color(0xffffff);
+const _wm = new THREE.Color();
+function whiteModel(hex, out){
+  _wm.set(hex);
+  const L = 0.2126*_wm.r + 0.7152*_wm.g + 0.0722*_wm.b;   // 线性空间相对亮度
+  return out.lerpColors(WM_LO, WM_HI, THREE.MathUtils.smoothstep(L, 0.015, 0.52));
+}
+class MeshBuilder {
+  constructor(){ this.P=[]; this.N=[]; this.C=[]; this._m=new THREE.Matrix4();
+    this._c=new THREE.Color(); this._cT=new THREE.Color(); this._cB=new THREE.Color(); }
+  add(geo, matrix, colorTop, colorBottom, splitY){
+    const g = ( geo.index ? geo.toNonIndexed() : geo.clone() ).applyMatrix4(matrix);
+    const pos = g.attributes.position, nor = g.attributes.normal;
+    const cT = whiteModel(colorTop, this._cT);
+    // 底部压深是假环境光遮蔽，白模全靠它落地，所以按固定比例走而不是沿用源色
+    const cB = colorBottom == null ? this._cB.copy(cT) : this._cB.copy(cT).multiplyScalar(0.74);
+    for (let i=0;i<pos.count;i++){
+      this.P.push(pos.getX(i), pos.getY(i), pos.getZ(i));
+      this.N.push(nor.getX(i), nor.getY(i), nor.getZ(i));
+      // 纵向渐变：底部压暗，模拟环境光遮蔽，低多边形的关键质感
+      const t = splitY ? THREE.MathUtils.smoothstep(pos.getY(i), 0, splitY) : 1;
+      this._c.copy(cB).lerp(cT, t);
+      this.C.push(this._c.r, this._c.g, this._c.b);
+    }
+    g.dispose();
+    return this;
+  }
+  box(w,h,d, x,y,z, rotY, colorTop, colorBottom){
+    this._m.compose(new THREE.Vector3(x, y + h/2, z),
+      new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0), rotY||0),
+      new THREE.Vector3(w,h,d));
+    return this.add(UNIT_BOX, this._m, colorTop, colorBottom, y + h);
+  }
+  geo(){
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(this.P,3));
+    g.setAttribute('normal',   new THREE.Float32BufferAttribute(this.N,3));
+    g.setAttribute('color',    new THREE.Float32BufferAttribute(this.C,3));
+    g.computeBoundingSphere();
+    return g;
+  }
+  get empty(){ return this.P.length === 0; }
+}
+
+/** 沿折线生成带状面（道路 / 河流 / 铁路） */
+function ribbon(pts3, width, y, color) {
+  const P=[], N=[], C=[], c=new THREE.Color(color), half=width/2;
+  const L=[], Rr=[];
+  for (let i=0;i<pts3.length;i++){
+    const prev = pts3[Math.max(0,i-1)], next = pts3[Math.min(pts3.length-1,i+1)];
+    const dir = new THREE.Vector3().subVectors(next, prev).setY(0).normalize();
+    const nrm = new THREE.Vector3(-dir.z, 0, dir.x).multiplyScalar(half);
+    L.push(new THREE.Vector3(pts3[i].x-nrm.x, y, pts3[i].z-nrm.z));
+    Rr.push(new THREE.Vector3(pts3[i].x+nrm.x, y, pts3[i].z+nrm.z));
+  }
+  for (let i=0;i<pts3.length-1;i++){
+    const quad = [L[i],Rr[i],Rr[i+1], L[i],Rr[i+1],L[i+1]];
+    for (const v of quad){ P.push(v.x,v.y,v.z); N.push(0,1,0); C.push(c.r,c.g,c.b); }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(P,3));
+  g.setAttribute('normal',   new THREE.Float32BufferAttribute(N,3));
+  g.setAttribute('color',    new THREE.Float32BufferAttribute(C,3));
+  return g;
+}
+
+/** 凸多边形扇形三角化（绿地） */
+function polyFan(pts3, y, color) {
+  const P=[], N=[], C=[], c=new THREE.Color(color);
+  for (let i=1;i<pts3.length-1;i++){
+    for (const v of [pts3[0], pts3[i], pts3[i+1]]){ P.push(v.x,y,v.z); N.push(0,1,0); C.push(c.r,c.g,c.b); }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(P,3));
+  g.setAttribute('normal',   new THREE.Float32BufferAttribute(N,3));
+  g.setAttribute('color',    new THREE.Float32BufferAttribute(C,3));
+  return g;
+}
+
+function mergeGeos(list){
+  let n=0; for (const g of list) n += g.attributes.position.count;
+  const P=new Float32Array(n*3), N=new Float32Array(n*3), C=new Float32Array(n*3);
+  let o=0;
+  for (const g of list){
+    P.set(g.attributes.position.array, o*3);
+    N.set(g.attributes.normal.array,   o*3);
+    C.set(g.attributes.color.array,    o*3);
+    o += g.attributes.position.count; g.dispose();
+  }
+  const out=new THREE.BufferGeometry();
+  out.setAttribute('position', new THREE.BufferAttribute(P,3));
+  out.setAttribute('normal',   new THREE.BufferAttribute(N,3));
+  out.setAttribute('color',    new THREE.BufferAttribute(C,3));
+  out.computeBoundingSphere();
+  return out;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   6 · CITY — 按真实街道骨架程序化生成低多边形街区
+   建筑不是随机撒的：沿每条真实道路的两侧退线排布，避开河道、绿地和地标。
+   ═══════════════════════════════════════════════════════════════════════ */
+let seed = 20260906;
+const rnd = () => (seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296;
+const rr = (a,b) => a + rnd()*(b-a);
+const pick = arr => arr[(rnd()*arr.length)|0];
+
+const toV3 = list => list.map(([la,lo]) => gp(la,lo));
+const WATER3 = WATER.map(w => ({ ...w, v: toV3(w.pts) }));
+const PARKS3 = PARKS.map(p => ({ ...p, v: toV3(p.pts) }));
+const ROADS3 = ROADS.map(r => ({ ...r, v: toV3(r.pts) }));
+const RAIL3  = { ...RAIL, v: toV3(RAIL.pts) };
+for (const lm of LANDMARKS) lm.pos = gp(lm.lat, lm.lon);
+
+const _a=new THREE.Vector3(), _b=new THREE.Vector3();
+function distToSeg(p, a, b){
+  _a.subVectors(b,a); _b.subVectors(p,a);
+  const t = THREE.MathUtils.clamp(_b.dot(_a)/Math.max(_a.lengthSq(),1e-6), 0, 1);
+  return Math.hypot(p.x-(a.x+_a.x*t), p.z-(a.z+_a.z*t));
+}
+function distToPath(p, v){
+  let m = Infinity;
+  for (let i=0;i<v.length-1;i++) m = Math.min(m, distToSeg(p, v[i], v[i+1]));
+  return m;
+}
+function inPoly(p, v){
+  let hit=false;
+  for (let i=0,j=v.length-1;i<v.length;j=i++){
+    if ((v[i].z>p.z)!==(v[j].z>p.z) &&
+        p.x < (v[j].x-v[i].x)*(p.z-v[i].z)/(v[j].z-v[i].z)+v[i].x) hit=!hit;
+  }
+  return hit;
+}
+const LM_CLEAR = { riverside:130, glenlee:80, kelvingrove:150, kelvinhall:130,
+                   unitower:150, station:95, burghhall:70, tenementrow:0 };
+function blocked(p, pad=0){
+  for (const w of WATER3) if (distToPath(p, w.v) < w.width/2 + 18 + pad) return true;
+  for (const pk of PARKS3) if (inPoly(p, pk.v)) return true;
+  for (const lm of LANDMARKS){
+    const c = LM_CLEAR[lm.kind] ?? 90;
+    if (c && p.distanceTo(lm.pos) < c + pad) return true;
+  }
+  return false;
+}
+
+/* ---- 地面 / 水 / 绿地 / 道路 ---------------------------------------- */
+const world = new THREE.Group(); scene.add(world);
+const sketchGround = new THREE.Group(); world.add(sketchGround);
+
+{
+  const gb = new MeshBuilder();
+  const groundGeo = new THREE.PlaneGeometry(8600, 8600, 1, 1);
+  groundGeo.rotateX(-Math.PI/2);
+  const pos = groundGeo.attributes.position, c = new THREE.Color(PAL.ground);
+  const nd = groundGeo.toNonIndexed();
+  const cols = new Float32Array(nd.attributes.position.count*3);
+  for (let i=0;i<nd.attributes.position.count;i++) cols.set([c.r,c.g,c.b], i*3);
+  nd.setAttribute('color', new THREE.Float32BufferAttribute(cols,3));
+  const parts = [nd];
+
+
+
+  const gm = new THREE.Mesh(mergeGeos(parts), matGround);
+  gm.receiveShadow = true; gm.renderOrder = -1;
+  sketchGround.add(gm);
+  void pos; void gb;
+}
+/* Geometry is generated directly from the mapped polygon rings. No random placement,
+   rotation or footprint scaling; inner rings remain open courtyards. */
+function mappedPolygons(feature){
+  return feature.geometry.type==='Polygon' ? [feature.geometry.coordinates] : feature.geometry.coordinates;
+}
+function mappedRings(polygon){
+  return polygon.map((ring,i)=>{
+    const points=ring.slice(0,-1).map(([lon,lat])=>{const v=gp(lat,lon);return new THREE.Vector2(v.x,v.z);});
+    if(THREE.ShapeUtils.isClockWise(points)===(i===0))points.reverse();
+    return points;
+  });
+}
+function footprintFrame(ring){
+  let best=0,ax=1,az=0;
+  for(let i=0;i<ring.length;i++){
+    const a=ring[i],b=ring[(i+1)%ring.length],dx=b.x-a.x,dz=b.y-a.y,n=dx*dx+dz*dz;
+    if(n>best){best=n;ax=dx/Math.sqrt(n);az=dz/Math.sqrt(n);}
+  }
+  let ux=-az,uz=ax;
+  const range=(x,z)=>{const values=ring.map(p=>p.x*x+p.y*z);return [Math.min(...values),Math.max(...values)];};
+  let u=range(ux,uz),v=range(ax,az);
+  if(u[1]-u[0]>v[1]-v[0]){[ux,uz,ax,az]=[ax,az,ux,uz];u=range(ux,uz);v=range(ax,az);}
+  return {ux,uz,ax,az,u0:(u[0]+u[1])/2,v0:(v[0]+v[1])/2,w:Math.max(.1,u[1]-u[0]),d:Math.max(.1,v[1]-v[0])};
+}
+function mappedHeight(feature,area){
+  const p=feature.properties;
+  const number=(value)=>{const n=parseFloat(value);return Number.isFinite(n)&&n>=0?n:null;};
+  const measured=number(p.height),levels=number(p['building:levels']);
+  const fallback={apartments:13,residential:10,house:7,terrace:10,detached:7,garage:3,garages:3,shed:2.6,greenhouse:3,church:17,university:16,industrial:9,warehouse:8,retail:6,train_station:12};
+  const defaults={riverside:26,kelvingrove:24,kelvinhall:23,burghhall:16};
+  let height=measured??(levels!==null?Math.max(1,levels)*3.2:defaults[p.landmark]??fallback[p.building]??(area<45?3.2:11));
+  let shape=p['roof:shape']||'flat';
+  if(p.landmark==='riverside')shape='folded';
+  if(p.building==='ship')shape='ship';
+  let roof=number(p['roof:height'])??(number(p['roof:levels'])!==null?number(p['roof:levels'])*3:null);
+  if(roof===null)roof=shape==='flat'||shape==='ship'?0:shape==='folded'?8:Math.min(5,height*.24);
+  if(p.osmId==='way/532962294')roof=24;
+  if(measured===null)height+=roof;
+  const min=number(p.min_height)??((number(p['building:min_level'])??0)*3.2);
+  if(p.building==='roof'||p['building:part']==='roof')return {height:Math.max(min+1,height),min:Math.max(min,height-.4),roof:0,shape:'flat'};
+  return {height:Math.max(height,min+.5),min,roof:Math.min(roof,height-min-.2),shape};
+}
+function splitRoofCell(points,fn){
+  const values=points.map(fn);
+  if(values.every(v=>v>=-1e-8)||values.every(v=>v<=1e-8))return [points];
+  const sides=[[],[]];
+  for(let i=0;i<points.length;i++){
+    const a=points[i],b=points[(i+1)%points.length],da=fn(a),db=fn(b);
+    if(da>=-1e-8)sides[0].push(a);if(da<=1e-8)sides[1].push(a);
+    if((da>1e-8&&db< -1e-8)||(da< -1e-8&&db>1e-8)){
+      const p=a.clone().lerp(b,da/(da-db));sides[0].push(p);sides[1].push(p);
+    }
+  }
+  return sides.filter(side=>side.length>=3);
+}
+function buildMappedGeometry(features,origin=new THREE.Vector3()){
+  const P=[],C=[];
+  const colors={wall:new THREE.Color(0xd9dce0),roof:new THREE.Color(0xb0b6bd),base:new THREE.Color(0xb5bbc1),ship:new THREE.Color(0x737b85)};
+  function triangle(a,b,c,color,up=false){
+    if(up&&new THREE.Vector3().subVectors(b,a).cross(new THREE.Vector3().subVectors(c,a)).y<0)[b,c]=[c,b];
+    for(const p of [a,b,c]){P.push(p.x-origin.x,p.y-origin.y,p.z-origin.z);C.push(color.r,color.g,color.b);}
+  }
+  function solid(geometry,position){
+    const g=geometry.index?geometry.toNonIndexed():geometry;
+    const p=g.attributes.position;
+    for(let i=0;i<p.count;i++){P.push(p.getX(i)+position.x-origin.x,p.getY(i)+position.y-origin.y,p.getZ(i)+position.z-origin.z);C.push(colors.ship.r,colors.ship.g,colors.ship.b);}
+    if(g!==geometry)g.dispose();geometry.dispose();
+  }
+  for(const feature of features)for(const polygon of mappedPolygons(feature)){
+    const rings=mappedRings(polygon),outer=rings[0];if(outer.length<3)continue;
+    const area=Math.abs(THREE.ShapeUtils.area(outer)),frame=footprintFrame(outer),spec=mappedHeight(feature,area);
+    const {height,min,roof,shape}=spec;
+    const u=p=>p.x*frame.ux+p.y*frame.uz-frame.u0;
+    const v=p=>p.x*frame.ax+p.y*frame.az-frame.v0;
+    const cuts=[];
+    let roofFactor=()=>0;
+    if(shape==='gabled'||shape==='round'||shape==='barrel'){
+      cuts.push(u);roofFactor=p=>Math.max(0,1-2*Math.abs(u(p))/frame.w);
+    }else if(shape==='pyramidal'||shape==='hipped'||shape==='dome'){
+      const nu=p=>u(p)*2/frame.w,nv=p=>v(p)*2/frame.d;
+      cuts.push(nu,nv,p=>nu(p)-nv(p),p=>nu(p)+nv(p));
+      roofFactor=p=>Math.max(0,1-Math.max(Math.abs(nu(p)),Math.abs(nv(p))));
+    }else if(shape==='folded'){
+      const waves=5,step=frame.w/(waves*2);
+      for(let i=1;i<waves*2;i++){const level=-frame.w/2+i*step;cuts.push(p=>u(p)-level);}
+      roofFactor=p=>{const a=(u(p)+frame.w/2)/step;return 1-Math.abs((a%2+2)%2-1);};
+    }
+    const top=p=>shape==='ship'?9:height-roof+roof*roofFactor(p);
+    // Split facade edges at the same roof ridges to keep walls watertight.
+    for(const ring of rings)for(let i=0;i<ring.length;i++){
+      const a=ring[i],b=ring[(i+1)%ring.length],ts=[0,1];
+      for(const cut of cuts){const da=cut(a),db=cut(b);if(da*db<0)ts.push(da/(da-db));}
+      ts.sort((a,b)=>a-b);
+      for(let j=0;j<ts.length-1;j++){
+        const p=a.clone().lerp(b,ts[j]),q=a.clone().lerp(b,ts[j+1]);
+        const low=p=>shape==='ship'?new THREE.Vector3((p.x-(frame.ux*frame.u0+frame.ax*frame.v0))*.68+frame.ux*frame.u0+frame.ax*frame.v0,2,(p.y-(frame.uz*frame.u0+frame.az*frame.v0))*.68+frame.uz*frame.u0+frame.az*frame.v0):new THREE.Vector3(p.x,min+.08,p.y);
+        const pb=low(p),qb=low(q),pt=new THREE.Vector3(p.x,top(p)+.08,p.y),qt=new THREE.Vector3(q.x,top(q)+.08,q.y);
+        triangle(pb,pt,qt,shape==='ship'?colors.ship:colors.wall);triangle(pb,qt,qb,shape==='ship'?colors.ship:colors.wall);
+      }
+    }
+    const flat=rings.flat(),indices=THREE.ShapeUtils.triangulateShape(outer,rings.slice(1));
+    for(const face of indices){
+      let cells=[face.map(i=>flat[i])];
+      for(const cut of cuts)cells=cells.flatMap(cell=>splitRoofCell(cell,cut));
+      for(const cell of cells)for(let i=1;i<cell.length-1;i++){
+        const points=[cell[0],cell[i],cell[i+1]].map(p=>new THREE.Vector3(p.x,top(p)+.08,p.y));triangle(...points,colors.roof,true);
+      }
+    }
+    if(shape==='ship'){
+      for(const t of [-.23,0,.23]){
+        const x=frame.ux*frame.u0+frame.ax*(frame.v0+frame.d*t),z=frame.uz*frame.u0+frame.az*(frame.v0+frame.d*t),h=t===0?37:32;
+        solid(new THREE.CylinderGeometry(.35,.6,h,6),new THREE.Vector3(x,9+h/2,z));
+        for(const [f,w] of [[.4,19],[.65,15],[.85,10]]){
+          const g=new THREE.BoxGeometry(w,.3,.3);g.rotateY(Math.atan2(-frame.uz,frame.ux));solid(g,new THREE.Vector3(x,9+h*f,z));
+        }
+      }
+    }
+  }
+  const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(P,3));g.setAttribute('color',new THREE.Float32BufferAttribute(C,3));g.computeVertexNormals();g.computeBoundingBox();g.computeBoundingSphere();return g;
+}
+const mappedGroups=new Map(LANDMARKS.map(lm=>[lm.id,[]]));
+const mappedCity=[];
+for(const feature of FOOTPRINT_DATA.features){
+  const group=mappedGroups.get(feature.properties.landmark);
+  (group||mappedCity).push(feature);
+}
+const CITY_MESH=new THREE.Mesh(buildMappedGeometry(mappedCity),matCity);
+CITY_MESH.name='osm-footprint-buildings';CITY_MESH.castShadow=true;CITY_MESH.receiveShadow=true;world.add(CITY_MESH);
+
+
+/* 边缘辉光壳：Fresnel + 加法混合，比反向外壳描边干净，且能被 bloom 拾取 */
+function rimMaterial(){
+  return new THREE.ShaderMaterial({
+    uniforms:{ uColor:{value:new THREE.Color(PAL.accentDeep)}, uPower:{value:0}, uTime:{value:0} },
+    vertexShader:`varying vec3 vN; varying vec3 vV;
+      void main(){ vec4 wp = modelMatrix*vec4(position,1.0);
+        vN = normalize(mat3(modelMatrix)*normal); vV = normalize(cameraPosition - wp.xyz);
+        gl_Position = projectionMatrix*viewMatrix*wp; }`,
+    fragmentShader:`uniform vec3 uColor; uniform float uPower, uTime; varying vec3 vN; varying vec3 vV;
+      void main(){
+        float f = pow(1.0 - abs(dot(normalize(vN), normalize(vV))), 2.2);
+        float pulse = 0.86 + 0.14*sin(uTime*2.1);
+        float a = f*uPower*pulse;
+        if (a < 0.004) discard;
+        gl_FragColor = vec4(uColor, a);
+      }`,
+    transparent:true, depthWrite:false, side:THREE.FrontSide,
+    polygonOffset:true, polygonOffsetFactor:-1, polygonOffsetUnits:-1,
+  });
+}
+
+const marks = [];
+for (const lm of LANDMARKS){
+  const features=mappedGroups.get(lm.id)||[];
+  const geo=buildMappedGeometry(features,lm.pos);
+  const anchorY=Math.max(12,geo.boundingBox.max.y+2);
+  lm.anchor=anchorY;
+  if(lm.id==='unitower')lm.anchor=86;
+  const span=Math.max(geo.boundingBox.max.x-geo.boundingBox.min.x,geo.boundingBox.max.z-geo.boundingBox.min.z);
+  lm.cam.dist=Math.max(lm.cam.dist,span*1.3);
+  lm.cam.height=Math.max(lm.cam.height,span*.55);
+  const mat = matLandmark.clone();
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.castShadow = true; mesh.receiveShadow = true;
+  const rimMat = rimMaterial();
+  const rim = new THREE.Mesh(geo, rimMat);
+  rim.renderOrder = 3;
+
+  const grp = new THREE.Group();
+  grp.position.copy(lm.pos);
+  grp.rotation.y = (lm.rot||0) * D2R;
+  grp.add(mesh, rim);
+  world.add(grp);
+
+  lm.anchorY = lm.anchor ?? anchorY;
+  lm.anchorPos = lm.pos.clone().setY(lm.anchorY);
+  marks.push({ lm, grp, mesh, mat, rim, rimMat });
+
+  // 机位：由方位角/距离/高度推出，全部可在 LANDMARKS.cam 里调
+  const br = lm.cam.bearing * D2R;
+  lm.camPos = new THREE.Vector3(
+    lm.pos.x + Math.sin(br)*lm.cam.dist, lm.cam.height, lm.pos.z - Math.cos(br)*lm.cam.dist);
+  lm.camLook = lm.pos.clone().setY(lm.cam.look);
+}
+const LM_MESHES = marks.map(m => m.mesh);
+
+/* 落地扫描环 + 光柱：共用一组，跟随当前地标 */
+const ringMat = new THREE.ShaderMaterial({
+  uniforms:{ uP:{value:0}, uColor:{value:new THREE.Color(PAL.accent)} },
+  vertexShader:`varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
+  fragmentShader:`uniform float uP; uniform vec3 uColor; varying vec2 vUv;
+    void main(){
+      float r = length(vUv - 0.5)*2.0;
+      float edge = 1.0 - smoothstep(0.0, 0.024, abs(r - uP));
+      float fade = (1.0 - smoothstep(0.25, 0.98, uP)) * step(0.001, uP);
+      float a = edge*fade*0.85;
+      if (a < 0.004) discard;
+      gl_FragColor = vec4(uColor, a);
+    }`,
+  transparent:true, depthWrite:false, side:THREE.DoubleSide,
+});
+const scanRing = new THREE.Mesh(new THREE.PlaneGeometry(1,1), ringMat);
+scanRing.rotation.x = -Math.PI/2; scanRing.visible = false; scanRing.renderOrder = 2;
+world.add(scanRing);
+
+
+/* ═══════════════════════════════════════════════════════════════════════
+   8 · HOTSPOTS — 红点用真实 DOM（CSS2D）挂在 3D 锚点上
+   好处：呼吸动画交给 CSS、点击命中不必 raycast、文字不糊、可聚焦可访问。
+   代价：需要自己做遮挡剔除，见 updateOcclusion()。
+   ═══════════════════════════════════════════════════════════════════════ */
+const pins = [];
+for (let i=0;i<LANDMARKS.length;i++){
+  const lm = LANDMARKS[i];
+  const el = document.createElement('div');
+  el.className = 'pin';
+  el.tabIndex = 0;
+  el.setAttribute('role','button');
+  el.setAttribute('aria-label', lm.zh);
+  el.innerHTML = `<span class="inner"><span class="core"></span>
+    <span class="ring"></span><span class="ring"></span>
+    <span class="tag"><span class="zh">${lm.zh}</span><span class="go">查看详情 →</span></span></span>`;
+  const act = (ev) => {
+    ev.stopPropagation();
+    if (nav.index === i && nav.state === 'focus') openDetail(i);
+    else travelTo(i);
+  };
+  el.addEventListener('click', act);
+  el.addEventListener('keydown', e => { if (e.key==='Enter'||e.key===' ') { e.preventDefault(); act(e); } });
+  const obj = new CSS2DObject(el);
+  obj.position.copy(lm.anchorPos);
+  world.add(obj);
+  pins.push({ el, obj, lm });
+}
+
+const ray = new THREE.Raycaster();
+const dirv = new THREE.Vector3();
+let occFrame = 0;
+function updateOcclusion(){
+  if ((occFrame++ % 4) !== 0) return;
+  for (let i=0;i<pins.length;i++){
+    const p = pins[i];
+    const target = p.lm.anchorPos;
+    const dist = camera.position.distanceTo(target);
+    dirv.subVectors(target, camera.position).normalize();
+    ray.set(camera.position, dirv);
+    ray.far = dist - 3;
+    const objs = [CITY_MESH];
+    for (let k=0;k<LM_MESHES.length;k++) if (k !== i) objs.push(LM_MESHES[k]);
+    const hit = ray.intersectObjects(objs, false).length > 0;
+    p.el.classList.toggle('occluded', hit);
+    // 远距离缩小，避免远处一片红点糊在一起
+    const s = THREE.MathUtils.clamp(1.25 - dist/2600, 0.55, 1.1);
+    p.el.style.setProperty('--ps', s.toFixed(3));
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   9 · NAVIGATION — 状态机 + 双样条镜头
+   idle → travel → focus → detail。转场只允许来自上一个状态，
+   避免自动巡游 / 点击 / 键盘三路输入互相打断造成动画竞态。
+   ═══════════════════════════════════════════════════════════════════════ */
+const nav = {
+  state:'idle', index:-1, t:0, dur:1, auto:false, autoWait:0,
+  posCurve:null, lookCurve:null, look:new THREE.Vector3(), fov0:55, fov1:46,
+};
+const hl = { on:false, t:0, mark:null };
+const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const easeInOutCubic = t => t<0.5 ? 4*t*t*t : 1 - Math.pow(-2*t+2,3)/2;
+const easeOutCubic   = t => 1 - Math.pow(1-t,3);
+
+function clearHighlight(){
+  if (!hl.mark) return;
+  const m = hl.mark;
+  m.mat.color.copy(C_WHITE);
+  m.rimMat.uniforms.uPower.value = 0;
+  scanRing.visible = false;
+  hl.on = false; hl.mark = null;
+  pins.forEach(p => p.el.classList.remove('live'));
+}
+
+function travelTo(i, instant=false){
+  if (i === nav.index && nav.state === 'travel' && !instant) return;
+  if (nav.state === 'detail') closeDetail(true);
+  const lm = LANDMARKS[i];
+  clearHighlight();
+  controls.enabled = false;
+
+  if(view.flat){
+    camera.position.copy(lm.camPos);nav.look.copy(lm.camLook);nav.index=i;arrive();
+    if(initFlatMap()){view.map.setView([lm.lat,lm.lon],Math.max(view.map.getZoom(),16),{animate:!REDUCED});syncMapSelection();}
+    return;
+  }
+  const from = camera.position.clone();
+  const fromLook = (nav.state==='travel' ? nav.look : controls.target).clone();
+  const to = lm.camPos.clone(), toLook = lm.camLook.clone();
+  const d = from.distanceTo(to);
+
+  if (instant || d < 1){
+    camera.position.copy(to); nav.look.copy(toLook);
+    nav.index = i; arrive(); return;
+  }
+
+  // 位置样条：中段抬升成一道弧，先拉开看清街区关系，再俯冲落位
+  const lift = Math.max(150, d*0.32);
+  const mid = from.clone().lerp(to, 0.5); mid.y = Math.max(from.y, to.y) + lift;
+  const p1 = from.clone().lerp(mid, 0.42); p1.y += lift*0.30;
+  const p2 = mid.clone().lerp(to, 0.58);   p2.y += lift*0.12;
+  nav.posCurve = new THREE.CatmullRomCurve3([from,p1,mid,p2,to], false, 'centripetal', 0.5);
+
+  // 注视点走另一条曲线：视线先扫过目标区域再稳定落定，而不是全程死盯
+  const l1 = fromLook.clone().lerp(toLook, 0.40);
+  const l2 = toLook.clone().lerp(fromLook, 0.12);
+  nav.lookCurve = new THREE.CatmullRomCurve3([fromLook,l1,l2,toLook], false, 'centripetal', 0.5);
+
+  nav.index = i; nav.t = 0; nav.fovStart = camera.fov;
+  nav.dur = REDUCED ? 0.7 : THREE.MathUtils.clamp(1.5 + d/430, 2.2, 5.0);
+  nav.state = 'travel';
+  syncRail();
+  setHud('飞行中');
+}
+
+function arrive(){
+  const lm = LANDMARKS[nav.index];
+  nav.state = 'focus';
+  syncMapSelection();
+  camera.fov = nav.fov1; camera.updateProjectionMatrix();
+  controls.target.copy(lm.camLook);
+  controls.enabled = true; controls.update();
+  aimShadow(lm.pos);
+
+  hl.mark = marks[nav.index]; hl.t = 0; hl.on = true;
+  const span = LM_CLEAR[lm.kind] ? LM_CLEAR[lm.kind]*0.95 : 110;
+  scanRing.position.set(lm.pos.x, 1.6, lm.pos.z);
+  scanRing.scale.set(span*2, span*2, 1);
+  scanRing.visible = true;
+
+  FOCUS.uFocus.value.copy(lm.pos);
+  syncRail();
+  setHud('已抵达');
+  const idx = nav.index;
+  setTimeout(() => { if (nav.index === idx) pins[idx].el.classList.add('live'); }, 340);
+  nav.autoWait = 0;
+}
+
+function stepHighlight(dt){
+  if (!hl.on || !hl.mark) return;
+  hl.t += dt;
+  const m = hl.mark;
+  const a = easeOutCubic(THREE.MathUtils.clamp(hl.t/0.9, 0, 1));            // 自发光爬升
+  const b = easeOutCubic(THREE.MathUtils.clamp((hl.t-0.08)/1.1, 0, 1));     // 边缘辉光
+  m.mat.color.copy(C_WHITE).lerp(C_ACCENT, a);   // 白模里唯一上色的体量
+  m.rimMat.uniforms.uPower.value = b * 0.60;
+  m.rimMat.uniforms.uTime.value = hl.t;
+  const rp = (hl.t % 2.6) / 2.6;                 // 地面扫描环循环
+  ringMat.uniforms.uP.value = hl.t < 5.2 ? rp : 0;
+  FOCUS.uFocusAmount.value = THREE.MathUtils.lerp(FOCUS.uFocusAmount.value, 0.66, 1-Math.pow(0.001, dt));
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   10 · DETAIL — 弹窗从红点原地展开；相机后撤一档给弹窗让出视觉空间
+   ═══════════════════════════════════════════════════════════════════════ */
+const veil=document.getElementById('veil'), modal=document.getElementById('modal');
+const dolly = { t:1, from:0, to:0 };
+function curDist(){ return camera.position.distanceTo(controls.target); }
+function setDolly(mult){ dolly.from = curDist(); dolly.to = dolly.from*mult; dolly.t = 0; }
+
+function pinScreenPos(i){
+  const v = LANDMARKS[i].anchorPos.clone().project(camera);
+  return { x:(v.x*0.5+0.5)*innerWidth, y:(-v.y*0.5+0.5)*innerHeight };
+}
+function openDetail(i){
+  if (nav.state !== 'focus') return;
+  const lm = LANDMARKS[i];
+  document.getElementById('mKick').textContent = lm.kicker;
+  document.getElementById('mTitle').textContent = lm.zh;
+  document.getElementById('mEn').textContent = lm.en;
+  document.getElementById('mCoord').textContent = fmtLL(lm.lat, lm.lon);
+  document.getElementById('facts').innerHTML =
+    lm.facts.map(([k,v]) => `<div><dt>${k}</dt><dd>${v}</dd></div>`).join('');
+  document.getElementById('prose').innerHTML = lm.prose.map(p => `<p>${p}</p>`).join('');
+
+  // 展开原点对准红点在屏幕上的位置
+  const s = view.flat ? {x:innerWidth/2,y:innerHeight/2} : pinScreenPos(i);
+  const r = { w: Math.min(560, innerWidth-44), h: Math.min(innerHeight*0.78, 720) };
+  const ox = THREE.MathUtils.clamp(s.x - (innerWidth-r.w)/2, -40, r.w+40);
+  const oy = THREE.MathUtils.clamp(s.y - (innerHeight-r.h)/2, -40, r.h+40);
+  modal.style.transformOrigin = `${ox.toFixed(0)}px ${oy.toFixed(0)}px`;
+
+  nav.state = 'detail'; nav.auto = false; syncTour();
+  veil.classList.add('open'); modal.classList.add('open');
+  if(!view.flat) setDolly(1.17);
+  setHud('详情');
+  setTimeout(()=>document.getElementById('x').focus(), 60);
+}
+function closeDetail(silent=false){
+  if (!modal.classList.contains('open')) return;
+  veil.classList.remove('open'); modal.classList.remove('open');
+  if (nav.state === 'detail') nav.state = 'focus';
+  if (!silent){ if(!view.flat) setDolly(1/1.17); setHud('已抵达'); }
+  if (nav.index >= 0) (view.flat ? view.markers[nav.index]?.getElement() : pins[nav.index].el)?.focus({ preventScroll:true });
+}
+veil.addEventListener('click', ()=>closeDetail());
+document.getElementById('x').addEventListener('click', ()=>closeDetail());
+document.getElementById('next').addEventListener('click', ()=>{
+  const n = (nav.index+1) % LANDMARKS.length;
+  closeDetail(true); travelTo(n);
+});
+// 焦点陷阱
+modal.addEventListener('keydown', e => {
+  if (e.key !== 'Tab') return;
+  const f = modal.querySelectorAll('button');
+  const first = f[0], last = f[f.length-1];
+  if (e.shiftKey && document.activeElement === first){ e.preventDefault(); last.focus(); }
+  else if (!e.shiftKey && document.activeElement === last){ e.preventDefault(); first.focus(); }
+});
+
+/* ═══════════════════════════════════════════════════════════════════════
+   11 · UI CHROME — 路线条 / HUD / 键盘 / 自动巡游
+   ═══════════════════════════════════════════════════════════════════════ */
+const rail = document.getElementById('rail');
+LANDMARKS.forEach((lm,i)=>{
+  const c = document.createElement('button');
+  c.className = 'chip';
+  c.innerHTML = `<span class="idx">${String(i+1).padStart(2,'0')}</span>
+    <span class="zh">${lm.zh}</span><span class="en">${lm.en}</span>`;
+  c.addEventListener('click', ()=>travelTo(i));
+  rail.appendChild(c);
+});
+const tourBtn = document.createElement('button');
+tourBtn.id = 'tour'; tourBtn.textContent = '自动巡游';
+tourBtn.addEventListener('click', ()=>{ nav.auto = !nav.auto; nav.autoWait = 0; syncTour(); });
+rail.appendChild(tourBtn);
+const chips = [...rail.querySelectorAll('.chip')];
+const syncRail = () => chips.forEach((c,i)=>c.classList.toggle('on', i===nav.index));
+const syncTour = () => tourBtn.classList.toggle('on', nav.auto);
+
+const hState=document.getElementById('hState'), hDist=document.getElementById('hDist'), hAlt=document.getElementById('hAlt');
+const setHud = s => hState.textContent = s;
+const needle = document.getElementById('needle');
+
+addEventListener('keydown', e=>{
+  if(e.target.closest('button,input,a,.leaflet-container') && e.key!=='Escape')return;
+  if (e.key === 'Escape'){ closeDetail(); return; }
+  if (nav.state === 'detail') return;
+  if (e.key === 'ArrowRight'){ travelTo((nav.index+1+LANDMARKS.length) % LANDMARKS.length); }
+  else if (e.key === 'ArrowLeft'){ travelTo((nav.index-1+LANDMARKS.length) % LANDMARKS.length); }
+  else if (e.key === ' '){ e.preventDefault(); nav.auto = !nav.auto; nav.autoWait = 0; syncTour(); }
+  else if (e.key === 'Enter' && nav.state === 'focus'){ openDetail(nav.index); }
+});
+
+let lastW = 0, lastH = 0;
+function fit(){
+  const w = vw(), h = vh();
+  if (w === lastW && h === lastH) return;
+  lastW = w; lastH = h;
+  camera.aspect = w/h; camera.updateProjectionMatrix();
+  renderer.setSize(w, h); composer.setSize(w, h); labelRenderer.setSize(w, h);
+}
+addEventListener('resize', fit);
+document.addEventListener('visibilitychange', fit);
+
+/* Real cartography: same geographic origin as the architectural models.
+   Request only visible ground tiles, retain browser HTTP caching, never prefetch. */
+const view = { flat:false, ground:true, map:null, markers:[], layer:null, outlines:null, route:true, routeLayers:null, routeLayer:null };
+const mapStatus=document.getElementById('mapstatus');
+const retryMap=document.getElementById('retry-map');
+const terrain=new THREE.Group();world.add(terrain);
+const terrainBase=new THREE.Mesh(new THREE.PlaneGeometry(8600,8600),new THREE.MeshStandardMaterial({color:0xf8f8f8,roughness:1}));
+terrainBase.rotation.x=-Math.PI/2;terrainBase.position.y=-.08;terrainBase.receiveShadow=true;world.add(terrainBase);
+const roadParts=STREET_DATA.features.map(f=>ribbon(f.geometry.coordinates.map(([lon,lat])=>gp(lat,lon)),f.properties.width,.025,0xd0d2d5));
+const streetMesh=new THREE.Mesh(mergeGeos(roadParts),new THREE.MeshBasicMaterial({vertexColors:true,side:THREE.DoubleSide}));terrain.add(streetMesh);
+const routeGroup=new THREE.Group();world.add(routeGroup);
+const routeMeshes=STREET_DATA.route.legs.map((leg,i)=>{
+  const points=leg.coordinates.map(([lon,lat])=>gp(lat,lon));
+  const backing=new THREE.Mesh(ribbon(points,5,.10,0xffffff),new THREE.MeshBasicMaterial({vertexColors:true,side:THREE.DoubleSide}));
+  const line=new THREE.Mesh(ribbon(points,2.6,.16,0xed7a19),new THREE.MeshBasicMaterial({vertexColors:true,side:THREE.DoubleSide,transparent:true,opacity:.8}));
+  routeGroup.add(backing,line);return line;
+});
+function mapMessage(){
+  mapStatus.textContent=`${STREET_DATA.route.order.length} 站 · 沿路参考路线约 ${(STREET_DATA.route.meters/1000).toFixed(1)} km`;
+}
+function updateGroundTiles(){terrain.visible=view.ground;sketchGround.visible=false;}
+function syncRoute(){
+  const active=nav.index;
+  routeMeshes.forEach((m,i)=>m.material.opacity=active<0||active===i?1:.55);
+  view.routeLayers?.forEach((layer,i)=>layer.setStyle({opacity:active<0||active===i?1:.55,weight:active===i?5:3}));
+  routeGroup.visible=view.route;
+  if(view.map&&view.routeLayer){if(view.route)view.routeLayer.addTo(view.map);else view.routeLayer.remove();}
+  mapMessage();
+}
+
+function initFlatMap(){
+  if(view.map)return true;
+  if(!window.L){mapStatus.textContent='地图组件未加载，请检查网络后重试';retryMap.hidden=false;return false;}
+  const L=window.L;
+  view.map=L.map('flatmap',{zoomControl:false,attributionControl:false, minZoom:12,maxZoom:19}).setView([ORIGIN.lat,ORIGIN.lon],15);
+  L.control.zoom({position:'topright'}).addTo(view.map);
+  L.control.scale({position:'bottomleft',imperial:false}).addTo(view.map);
+  const canvas=L.canvas({padding:.2});
+  view.layer=L.geoJSON(STREET_DATA,{renderer:canvas,interactive:true,
+    style:f=>({color:'#c6c9cd',weight:Math.max(1,Math.min(5,f.properties.width*.35)),opacity:1}),
+    onEachFeature:(f,layer)=>{if(f.properties.name)layer.bindTooltip(f.properties.name,{sticky:true});}
+  }).addTo(view.map);
+  view.routeLayer=L.layerGroup();
+  view.routeLayers=STREET_DATA.route.legs.map(leg=>{
+    const points=leg.coordinates.map(([lon,lat])=>[lat,lon]);
+    L.polyline(points,{renderer:canvas,color:'#ffffff',weight:7,interactive:false}).addTo(view.routeLayer);
+    return L.polyline(points,{renderer:canvas,color:'#ed7a19',weight:4,opacity:.85,interactive:false}).addTo(view.routeLayer);
+  });
+  if(view.route)view.routeLayer.addTo(view.map);
+  mapMessage();
+  view.outlines=L.geoJSON(FOOTPRINT_DATA,{
+    renderer:L.canvas({padding:.2}),interactive:false,
+    style:feature=>({color:'#454b52',weight:.7,opacity:.55,fillColor:'#d8dbde',fillOpacity:1})
+  }).addTo(view.map);
+  if(view.route){view.routeLayer.remove();view.routeLayer.addTo(view.map);}
+  view.markers=LANDMARKS.map((lm,i)=>{
+    const marker=L.marker([lm.lat,lm.lon],{title:lm.zh,keyboard:true,icon:L.divIcon({className:'map-pin',html:`<span>${String(i+1).padStart(2,'0')}</span>`,iconSize:[28,28],iconAnchor:[14,14]})}).addTo(view.map);
+    marker.bindTooltip(lm.zh,{direction:'top',offset:[0,-14]});
+    marker.on('click',()=>{if(nav.index===i&&nav.state==='focus')openDetail(i);else travelTo(i);});return marker;
+  });
+  retryMap.hidden=true;
+  return true;
+}
+function syncMapSelection(){
+  syncRoute();
+  const selected=LANDMARKS[nav.index]?.id;
+  view.outlines?.setStyle(feature=>selected&&feature.properties.landmark===selected?
+    {color:'#ed7a19',weight:1.5,opacity:.95,fillColor:'#ed7a19',fillOpacity:.8}:
+    {color:'#454b52',weight:.7,opacity:.55,fillColor:'#d8dbde',fillOpacity:1});
+  view.markers.forEach((marker,i)=>marker.getElement()?.classList.toggle('selected',i===nav.index));
+}
+function setViewMode(flat){
+  if(nav.state==='detail')closeDetail(true);
+  nav.auto=false;syncTour();dolly.t=1;
+  // Finish an interrupted flight before changing surfaces.
+  if(nav.state==='travel')travelTo(nav.index,true);
+  view.flat=flat;document.body.classList.toggle('flat',flat);
+  document.getElementById('mapcredit').hidden=false;
+  document.getElementById('view3d').setAttribute('aria-pressed',String(!flat));
+  document.getElementById('view2d').setAttribute('aria-pressed',String(flat));
+  document.getElementById('mapnote').textContent=flat?'地图与模型共用建筑轮廓 · 再次点击选中地标查看详情':'建筑轮廓：OpenStreetMap · 未标注高度按层数或类型估算';
+  if(flat&&initFlatMap()){
+    view.map.invalidateSize();
+    if(nav.index>=0){const lm=LANDMARKS[nav.index];view.map.setView([lm.lat,lm.lon],16,{animate:false});}
+    else view.map.fitBounds(LANDMARKS.map(lm=>[lm.lat,lm.lon]),{paddingTopLeft:[40,220],paddingBottomRight:[40,70]});
+    syncMapSelection();
+  }
+  if(!flat){controls.enabled=true;mapMessage();updateGroundTiles(1,true);}
+}
+document.getElementById('view3d').addEventListener('click',()=>setViewMode(false));
+document.getElementById('view2d').addEventListener('click',()=>setViewMode(true));
+document.getElementById('ground-toggle').addEventListener('change',e=>{view.ground=e.target.checked;document.getElementById('mapcredit').hidden=false;updateGroundTiles(1,true);mapMessage();});
+document.getElementById('route-toggle').addEventListener('change',e=>{view.route=e.target.checked;syncRoute();});
+retryMap.addEventListener('click',()=>{
+  if(!view.map){const script=document.createElement('script');script.src='https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js';script.onload=()=>{retryMap.hidden=true;setViewMode(true);};document.head.appendChild(script);}
+});
+document.getElementById('overview').addEventListener('click',()=>{
+  closeDetail(true);nav.auto=false;syncTour();clearHighlight();nav.state='idle';nav.index=-1;dolly.t=1;syncRail();syncMapSelection();
+  if(view.flat&&initFlatMap())view.map.fitBounds(LANDMARKS.map(lm=>[lm.lat,lm.lon]),{paddingTopLeft:[40,220],paddingBottomRight:[40,70]});
+  camera.position.set(-900,1250,1350);controls.target.copy(gp(55.8705,-4.302));nav.look.copy(controls.target);controls.enabled=true;camera.fov=55;camera.updateProjectionMatrix();controls.update();FOCUS.uFocusAmount.value=0;setHud('全区总览');hDist.textContent='—';
+});
+
+/* ═══════════════════════════════════════════════════════════════════════
+   12 · LOOP
+   ═══════════════════════════════════════════════════════════════════════ */
+const clock = new THREE.Clock();
+const _tmp = new THREE.Vector3();
+
+function tick(){
+  requestAnimationFrame(tick);
+  fit();
+  const dt = Math.min(clock.getDelta(), 0.05);
+  const t  = clock.elapsedTime;
+  if(view.flat){
+    if(nav.auto&&nav.state==='focus'){nav.autoWait+=dt;if(nav.autoWait>5)travelTo((nav.index+1)%LANDMARKS.length);}
+    return;
+  }
+  updateGroundTiles(dt);
+  matWater.uniforms.uTime.value = t;
+  sky.position.copy(camera.position);
+
+  if (nav.state === 'travel'){
+    nav.t += dt / nav.dur;
+    const k = Math.min(nav.t, 1), e = easeInOutCubic(k);
+    camera.position.copy(nav.posCurve.getPoint(e));
+    nav.look.copy(nav.lookCurve.getPoint(e));
+    camera.lookAt(nav.look);
+    // 前段放宽看清街区关系，末段收窄制造减速落位的"到达感"
+    const w = easeOutCubic(THREE.MathUtils.clamp(k/0.30, 0, 1));
+    const z = easeOutCubic(THREE.MathUtils.clamp((k-0.68)/0.32, 0, 1));
+    camera.fov = THREE.MathUtils.lerp(THREE.MathUtils.lerp(nav.fovStart, nav.fov0, w), nav.fov1, z);
+    camera.updateProjectionMatrix();
+    // 旅途中松开焦点压暗，重新看到整片街区
+    FOCUS.uFocusAmount.value = THREE.MathUtils.lerp(FOCUS.uFocusAmount.value, 0.12, 1-Math.pow(0.02, dt));
+    FOCUS.uFocus.value.lerp(_tmp.copy(nav.look), 1-Math.pow(0.02, dt));
+    hDist.textContent = Math.round(camera.position.distanceTo(nav.posCurve.getPoint(1))) + ' m';
+    if (nav.t >= 1) arrive();
+  } else {
+    if (dolly.t < 1){
+      dolly.t = Math.min(1, dolly.t + dt/0.5);
+      const want = THREE.MathUtils.lerp(dolly.from, dolly.to, easeOutCubic(dolly.t));
+      const off = _tmp.subVectors(camera.position, controls.target);
+      camera.position.copy(controls.target).addScaledVector(off, want/off.length());
+    }
+    if (controls.enabled) controls.update();
+    if (nav.index >= 0) hDist.textContent = Math.round(camera.position.distanceTo(LANDMARKS[nav.index].pos)) + ' m';
+    if (nav.auto && nav.state === 'focus'){
+      nav.autoWait += dt;
+      if (nav.autoWait > 5.0) travelTo((nav.index+1) % LANDMARKS.length);
+    }
+  }
+
+  stepHighlight(dt);
+  updateOcclusion();
+  aimShadow(nav.state==='travel' ? nav.look : controls.target,
+            Math.round(THREE.MathUtils.clamp(camera.position.y*1.15, 240, 1000) / 20) * 20);
+
+  hAlt.textContent = Math.round(camera.position.y) + ' m';
+  const dir = _tmp.subVectors(nav.state==='travel' ? nav.look : controls.target, camera.position);
+  needle.setAttribute('transform', `rotate(${(Math.atan2(dir.x, -dir.z)/D2R).toFixed(1)} 22 22)`);
+
+  composer.render();
+  labelRenderer.render(scene, camera);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   13 · BOOT
+   ═══════════════════════════════════════════════════════════════════════ */
+const barFill = document.getElementById('barFill');
+let prog = 0;
+const bump = p => { prog = p; barFill.style.right = (100-p) + '%'; };
+bump(18);
+
+// 初始鸟瞰：从西南方向俯视整个 Partick，再飞向第一站
+camera.position.set(gp(55.8598,-4.3268).x, 560, gp(55.8598,-4.3268).z);
+nav.look.copy(gp(55.8712,-4.3020, 20));
+camera.lookAt(nav.look);
+controls.target.copy(nav.look);
+FOCUS.uFocusAmount.value = 0;
+
+setTimeout(()=>{
+  bump(62);
+  try { renderer.compile(scene, camera); } catch(e){ console.warn('precompile skipped', e); }
+  bump(100);
+  setTimeout(()=>{
+    document.getElementById('boot').classList.add('gone');
+    tick();
+    setTimeout(()=>{if(!view.flat&&nav.index<0&&nav.state==='idle')travelTo(0);}, 700);
+  }, 320);
+}, 60);
+</script>
+
+</html>
