@@ -242,7 +242,7 @@ Standard 的 config 项在不同小版本里改过名字（`show3dLandmarks` / `
 
 **坑 1：镜头宽度不一样。** 现有场景是 `PerspectiveCamera(55°)`，
 MapLibre / Mapbox 固定 36.87°，窄得多。一开始直接拿 `distance` 套
-`mpp = distance / (1.5 × 视口高)` 算 zoom，结果河畔博物馆**直接顶满全屏**（见下图对比）。
+`mpp = distance / (1.5 × 视口高)` 算 zoom，结果河畔博物馆**直接顶满全屏**。
 修法是先把距离换成"要看到多少米高的画面"：
 
 ```js
