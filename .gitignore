@@ -5,3 +5,8 @@
 
 node_modules/
 .DS_Store
+
+# 探针的本地输出，不是源码。
+# 尤其别提交空的 indoor-probe.json —— 那看起来像"查过了，没有"，
+# 但它也可能只是没查成（见 spike/tools/probe-indoor.mjs）。
+indoor-probe.json
