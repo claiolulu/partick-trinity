@@ -19,7 +19,7 @@
     --font:"Archivo","PingFang SC","Hiragino Sans GB","Microsoft YaHei",
            -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
     --mono:"Azeret Mono","PingFang SC",ui-monospace,SFMono-Regular,Menlo,monospace;
-    --sheet:52vh;
+    --bar:60px;                       /* 收起时那条窄条的高度，JS 里的 BAR 要跟它对上 */
     --safe-b:env(safe-area-inset-bottom,0px);
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
@@ -31,7 +31,7 @@
 
   #map{position:fixed;inset:0}
   .maplibregl-ctrl-attrib{font-size:10px}
-  .maplibregl-ctrl-bottom-right{margin-bottom:calc(var(--sheet) - 4px)}
+  .maplibregl-ctrl-bottom-right{margin-bottom:calc(var(--bar) + var(--safe-b))}
 
   /* ---------- 顶部标题 ---------- */
   #head{
@@ -60,21 +60,61 @@
     background:#fff;color:var(--ink-dim);text-decoration:none;
   }
 
-  /* ---------- 底部内容卡（手机是主界面，桌面变左栏） ---------- */
+  /* ---------- 底部内容：默认只留一条窄条，点开才盖屏 ----------
+     照搬老方案的思路：地图始终全屏，内容平时收着，点了才展开，
+     展开时相机后撤一档给内容让视觉空间（老方案是 setDolly(1.17)）。 */
+  #veil{
+    position:fixed;inset:0;z-index:5;background:rgba(18,24,34,.30);
+    opacity:0;pointer-events:none;transition:opacity .3s;
+  }
+  #veil.on{opacity:1;pointer-events:auto}
+
   #sheet{
     position:fixed;left:0;right:0;bottom:0;z-index:6;
-    height:var(--sheet);
+    height:calc(var(--bar) + var(--safe-b));
     background:var(--panel);
     border-top:1px solid var(--edge);
-    box-shadow:0 -12px 34px rgba(18,24,34,.12);
-    display:flex;flex-direction:column;
+    box-shadow:0 -10px 28px rgba(18,24,34,.10);
+    display:flex;flex-direction:column;overflow:hidden;
     padding-bottom:var(--safe-b);
+    transition:height .34s cubic-bezier(.4,0,.2,1);
   }
+  #sheet.open{
+    height:min(76vh,720px);
+    box-shadow:0 -18px 44px rgba(18,24,34,.22);
+  }
+
+  #grip{flex:0 0 auto;height:var(--bar);display:flex;align-items:center;gap:6px;padding:0 8px}
+  #grip .step{
+    flex:0 0 auto;width:42px;height:42px;border:1px solid var(--edge-hi);background:#fff;
+    border-radius:50%;font:400 21px/1 var(--font);color:var(--ink);cursor:pointer;
+  }
+  #grip .step:disabled{color:#c6cad0;border-color:var(--edge);cursor:default}
+  #toggle{
+    flex:1 1 auto;min-width:0;display:flex;align-items:center;gap:10px;
+    background:none;border:0;font:inherit;color:inherit;cursor:pointer;
+    padding:6px 2px;text-align:left;
+  }
+  #toggle .ord{
+    flex:0 0 auto;font-family:var(--mono);font-size:11px;font-weight:500;
+    color:var(--accent-deep);border:1px solid #f0c9a0;border-radius:999px;padding:3px 8px;
+  }
+  #toggle .nm{flex:1 1 auto;min-width:0}
+  #toggle .nm b{display:block;font-size:16px;font-weight:600;line-height:1.2;
+                white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #toggle .nm i{display:block;font-style:normal;font-family:var(--mono);font-size:10.5px;
+                color:var(--ink-faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #toggle .chev{flex:0 0 auto;width:22px;text-align:center;color:var(--ink-faint);
+                font-size:15px;transition:transform .3s}
+  #sheet.open #toggle .chev{transform:rotate(180deg)}
+
+  #body{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;overflow:hidden}
 
   /* 站点横向 chip 条 —— 手机上比竖列表好按 */
   #rail{
     display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;
-    padding:10px 14px;border-bottom:1px solid var(--edge);flex:0 0 auto;
+    padding:10px 14px;border-top:1px solid var(--edge);
+    border-bottom:1px solid var(--edge);flex:0 0 auto;
   }
   #rail::-webkit-scrollbar{display:none}
   .chip{
@@ -104,19 +144,6 @@
 
   #leg{margin:16px 0 0;font-family:var(--mono);font-size:11px;letter-spacing:.06em;color:var(--ink-faint)}
 
-  /* 上一站 / 下一站 */
-  #nav{
-    flex:0 0 auto;display:flex;gap:8px;padding:10px 14px 12px;border-top:1px solid var(--edge);
-    background:#fff;
-  }
-  #nav button{
-    flex:1;border:1px solid var(--edge-hi);background:#fff;color:var(--ink);
-    border-radius:4px;padding:11px;font:inherit;font-size:14px;font-weight:500;cursor:pointer;
-  }
-  #nav button:disabled{color:var(--ink-faint);border-color:var(--edge);cursor:default}
-  #nav button.primary{background:var(--ink);border-color:var(--ink);color:#fff}
-  #nav button.primary:disabled{background:#eceef1;border-color:var(--edge);color:var(--ink-faint)}
-
   /* ---------- 状态 / 报错 ---------- */
   #status{
     position:fixed;z-index:9;left:50%;top:50%;transform:translate(-50%,-50%);
@@ -128,21 +155,23 @@
   /* 永远不要挡住点击：报错提示是给人看的，不该把界面锁死 */
   #status{pointer-events:none}
 
-  /* ---------- 桌面：卡片变左栏，地图占右边 ---------- */
+  /* ---------- 桌面：左栏常驻，不存在遮挡问题，所以不收起 ---------- */
   @media (min-width:900px){
-    :root{--sheet:0px}
+    :root{--bar:66px}
     #sheet{
-      top:0;right:auto;width:396px;height:100%;
+      top:0;right:auto;width:396px;height:100%!important;
       border-top:0;border-right:1px solid var(--edge);
       box-shadow:0 0 40px rgba(18,24,34,.10);
+      padding-bottom:0;
     }
     #head{left:396px;padding-top:14px}
-    #rail{
-      order:2;flex-wrap:wrap;overflow:visible;border-bottom:0;border-top:1px solid var(--edge);
-    }
-    #card{padding:26px 26px 18px}
-    #zh{font-size:30px}
-    #nav{order:3}
+    #grip{border-bottom:1px solid var(--edge)}
+    #toggle{cursor:default}
+    #toggle .chev{display:none}
+    #rail{border-top:0;flex-wrap:wrap;overflow:visible}
+    #card{padding:22px 26px 20px}
+    #zh{font-size:28px}
+    #veil{display:none}
     .maplibregl-ctrl-bottom-right{margin-bottom:0}
     .maplibregl-ctrl-bottom-left{margin-left:404px}
   }
@@ -162,19 +191,29 @@
   <a class="tag" href="../index.html">对比原版 ↗</a>
 </header>
 
+<div id="veil"></div>
+
 <section id="sheet" hidden>
-  <nav id="rail" aria-label="路线站点"></nav>
-  <article id="card">
-    <p id="kicker"></p>
-    <h2 id="zh"></h2>
-    <p id="en"></p>
-    <dl id="facts"></dl>
-    <div id="prose"></div>
-    <p id="leg"></p>
-  </article>
-  <div id="nav">
-    <button id="prev" type="button">← 上一站</button>
-    <button id="next" type="button" class="primary">下一站 →</button>
+  <!-- 收起态就只有这一条：站名 + 前后站。点中间展开 -->
+  <div id="grip">
+    <button id="prev" class="step" type="button" aria-label="上一站">‹</button>
+    <button id="toggle" type="button" aria-expanded="false" aria-controls="body">
+      <span class="ord" id="g-ord"></span>
+      <span class="nm"><b id="g-zh"></b><i id="g-en"></i></span>
+      <span class="chev" aria-hidden="true">⌃</span>
+    </button>
+    <button id="next" class="step" type="button" aria-label="下一站">›</button>
+  </div>
+  <div id="body">
+    <nav id="rail" aria-label="路线站点"></nav>
+    <article id="card">
+      <p id="kicker"></p>
+      <h2 id="zh"></h2>
+      <p id="en"></p>
+      <dl id="facts"></dl>
+      <div id="prose"></div>
+      <p id="leg"></p>
+    </article>
   </div>
 </section>
 
@@ -248,17 +287,35 @@ const byId = new Map(STOPS.map(s => [s.id, s]));
 const FOV_SRC = 55 * Math.PI / 180;                 // 现有 index.html 的 PerspectiveCamera(55, …)
 const SPAN_K = 2 * Math.tan(FOV_SRC / 2);           // ≈ 1.041
 
+const BAR = 60;          // 收起时那条窄条的高度，和 CSS 的 --bar 对上
+const PULLBACK = 1.18;   // 展开内容时相机后撤的倍数（老方案是 setDolly(1.17)）
+let sheetOpen = false;
+
+const viewportH = () => Math.max(320, visualViewport ? visualViewport.height : innerHeight);
+
 function zoomFor(distanceM, lat) {
-  const h = Math.max(320, visualViewport ? visualViewport.height : innerHeight);
-  const usable = isDesktop() ? h : h * 0.52;        // 手机上卡片盖掉了下半屏
-  const mpp = (distanceM * SPAN_K) / usable;        // 每像素多少米
+  // 基准永远是"收起态的可视高度"。展开时不拿剩下那一小条去算——
+  // 那会把镜头拉得极远；改成乘一个温和的后撤系数，和老方案一个量级。
+  const base = isDesktop() ? viewportH() : viewportH() - BAR;
+  const d = distanceM * (sheetOpen && !isDesktop() ? PULLBACK : 1);
+  const mpp = (d * SPAN_K) / base;
   return Math.log2(156543.03392 * Math.cos(lat * Math.PI / 180) / mpp);
 }
 function paddingFor() {
-  // 把注视点推到可视区中间，而不是被卡片盖住的屏幕正中
-  return isDesktop()
-    ? { left: 396, top: 40, right: 40, bottom: 40 }
-    : { top: 70, bottom: Math.round(innerHeight * 0.52), left: 16, right: 16 };
+  if (isDesktop()) return { left: 396, top: 40, right: 40, bottom: 40 };
+  const h = viewportH();
+  // padding 不能吃掉整个视口，留至少 200px 给地图，否则 MapLibre 会算崩
+  const bottom = sheetOpen ? Math.round(Math.min(h * 0.68, h - 200)) : BAR + 10;
+  return { top: 60, bottom, left: 16, right: 16 };
+}
+function camFor(s) {
+  return {
+    center: s.center,
+    zoom: zoomFor(s.camera.distance, s.center[1]),
+    pitch: s.camera.pitch,
+    bearing: s.camera.bearing,
+    padding: paddingFor(),
+  };
 }
 
 const map = window.__map = new maplibregl.Map({
@@ -406,9 +463,16 @@ map.on('load', () => {
     hovered = null;
     popup.remove();
   });
+  // 点亮着的楼 = 老方案里点红点：切到那一站并展开内容
   map.on('click', 'hilite-3d', e => {
+    e.originalEvent._onBuilding = true;
     const s = e.features[0].properties.stop;
     if (s && s !== active) select(s);
+    setSheet(true);
+  });
+  // 点空白处收起，把地图还给用户
+  map.on('click', e => {
+    if (!e.originalEvent._onBuilding) setSheet(false);
   });
 
   styleReady = true;
@@ -441,21 +505,20 @@ function select(id, { instant = false } = {}) {
   map.setFilter('route-active',
     ['all', ['==', ['get', 'kind'], 'leg'], ['==', ['get', 'from'], id]]);
 
-  const cam = {
-    center: s.center,
-    zoom: zoomFor(s.camera.distance, s.center[1]),
-    pitch: s.camera.pitch,
-    bearing: s.camera.bearing,
-    padding: paddingFor(),
-  };
+  const cam = camFor(s);
   if (instant || reduceMotion) map.jumpTo(cam);
-  else map.flyTo({ ...cam, duration: 2000, curve: 1.42, essential: true });
+  else map.flyTo({ ...cam, duration: 1800, curve: 1.42, essential: true });
 
   renderCard(s);
   history.replaceState(null, '', `?walk=${WALK_ID}&stop=${id}`);
 }
 
 function renderCard(s) {
+  // 收起态那条窄条
+  document.getElementById('g-ord').textContent = String(s.order).padStart(2, '0');
+  document.getElementById('g-zh').textContent = s.zh;
+  document.getElementById('g-en').textContent = s.en;
+
   document.getElementById('kicker').textContent = s.kicker;
   document.getElementById('zh').textContent = s.zh;
   document.getElementById('en').textContent = s.en;
@@ -503,8 +566,31 @@ const step = d => {
 };
 document.getElementById('prev').addEventListener('click', () => step(-1));
 document.getElementById('next').addEventListener('click', () => step(1));
+
+/* ---------- 展开 / 收起 ----------
+   收起是默认态：地图整屏，只留一条窄条。展开时相机后撤一档。 */
+function setSheet(open) {
+  if (isDesktop() || open === sheetOpen) return;
+  sheetOpen = open;
+  document.getElementById('sheet').classList.toggle('open', open);
+  document.getElementById('veil').classList.toggle('on', open);
+  document.getElementById('toggle').setAttribute('aria-expanded', String(open));
+  if (open) document.getElementById('card').scrollTop = 0;
+
+  const s = byId.get(active);
+  if (!s) return;
+  const cam = camFor(s);
+  // 这里用 easeTo 而不是 flyTo：只是让个位置，不该再飞一次
+  if (reduceMotion) map.jumpTo(cam);
+  else map.easeTo({ ...cam, duration: 420, essential: true });
+}
+
+document.getElementById('toggle').addEventListener('click', () => setSheet(!sheetOpen));
+document.getElementById('veil').addEventListener('click', () => setSheet(false));
+
 addEventListener('keydown', e => {
-  if (e.target.closest('button,input,a')) return;
+  if (e.key === 'Escape') { setSheet(false); return; }
+  if (e.target.closest('button,input,a,select')) return;
   if (e.key === 'ArrowRight' || e.key === 'ArrowDown') { e.preventDefault(); step(1); }
   if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') { e.preventDefault(); step(-1); }
 });

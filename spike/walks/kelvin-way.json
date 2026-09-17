@@ -1,7 +1,7 @@
 {
   "id": "kelvin-way",
   "title": "凯尔文河谷",
-  "subtitle": "BOTANICS TO KELVINGROVE",
+  "subtitle": "TRINITY TO KELVINGROVE",
   "city": "Glasgow",
 
   "_说明": [
@@ -23,16 +23,37 @@
     "  facts     四组 [标签, 值]",
     "  prose     正文段落，可以带 <strong> <em>",
     "",
-    "⚠️ 下面 botanic 和 kelvinpark 两站的文案是我起草的，没能联网核对。",
+    "⚠️ trinity 这站的文案是占位的，必须换掉。",
+    "⚠️ botanic 和 kelvinpark 两站的文案是我起草的，没能联网核对。",
     "   unitower 和 kelvingrove 两站沿用仓库 index.html 里原有的文案。"
   ],
 
   "stops": [
     {
+      "id": "trinity",
+      "zh": "帕蒂克三一堂",
+      "en": "Partick Trinity Parish Church",
+      "kicker": "STOP 01 · DOWANHILL",
+      "at": [-4.29876, 55.87323],
+      "buildings": { "osmIds": ["way/51795705"] },
+      "camera": { "bearing": 120, "pitch": 60, "distance": 250, "look": 12 },
+      "facts": [
+        ["宗派", "苏格兰教会"],
+        ["街区", "Dowanhill"],
+        ["落成", "待补"],
+        ["保护级别", "待补"]
+      ],
+      "prose": [
+        "⚠️ 这一站的文案是占位的，需要你来写 —— 见 spike/walks/kelvin-way.json。",
+        "<strong>帕蒂克三一堂</strong>站在 Dowanhill 的坡上，是这条路线的起点，也是这个项目名字的来源。",
+        "从这里往东北走十分钟就是植物园，往南沿 Byres Road 下去是大学。它正好卡在 Partick 的老自治市镇和西区之间 —— 这条路线接下来要走的，就是这两者之间的那段地。"
+      ]
+    },
+    {
       "id": "botanic",
       "zh": "植物园",
       "en": "Glasgow Botanic Gardens",
-      "kicker": "STOP 01 · GREAT WESTERN ROAD",
+      "kicker": "STOP 02 · GREAT WESTERN ROAD",
       "at": [-4.28849, 55.87885],
       "buildings": {
         "names": ["Kibble Palace", "Glasshouse", "The Botanic Gardens Tearooms", "West Lodge"],
@@ -55,7 +76,7 @@
       "id": "unitower",
       "zh": "格拉斯哥大学主楼塔",
       "en": "University of Glasgow Tower",
-      "kicker": "STOP 02 · GILMOREHILL",
+      "kicker": "STOP 03 · GILMOREHILL",
       "at": [-4.28864, 55.87109],
       "buildings": { "radius": 130, "minArea": 60, "maxCount": 24 },
       "camera": { "bearing": 20, "pitch": 66, "distance": 330, "look": 56 },
@@ -75,7 +96,7 @@
       "id": "kelvinpark",
       "zh": "凯尔文格罗夫公园",
       "en": "Kelvingrove Park",
-      "kicker": "STOP 03 · KELVIN WAY",
+      "kicker": "STOP 04 · KELVIN WAY",
       "at": [-4.28300, 55.87000],
       "camera": { "bearing": 230, "pitch": 58, "distance": 420, "look": 6 },
       "facts": [
@@ -94,7 +115,7 @@
       "id": "kelvingrove",
       "zh": "凯尔文格罗夫美术馆",
       "en": "Kelvingrove Art Gallery & Museum",
-      "kicker": "STOP 04 · ARGYLE STREET",
+      "kicker": "STOP 05 · ARGYLE STREET",
       "at": [-4.29063, 55.86858],
       "buildings": { "osmIds": ["way/26605473"] },
       "camera": { "bearing": 350, "pitch": 64, "distance": 300, "look": 26 },

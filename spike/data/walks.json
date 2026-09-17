@@ -1,4 +1,16 @@
 [
-  { "id": "partick-trinity", "title": "PARTICK TRINITY", "subtitle": "CRAFTING THE WEST END", "stops": 8, "km": 5.6 },
-  { "id": "kelvin-way", "title": "凯尔文河谷", "subtitle": "BOTANICS TO KELVINGROVE", "stops": 4, "km": 2.4 }
+  {
+    "id": "partick-trinity",
+    "title": "PARTICK TRINITY",
+    "subtitle": "CRAFTING THE WEST END",
+    "stops": 8,
+    "km": 5.6
+  },
+  {
+    "id": "kelvin-way",
+    "title": "凯尔文河谷",
+    "subtitle": "TRINITY TO KELVINGROVE",
+    "stops": 5,
+    "km": 3.6
+  }
 ]
