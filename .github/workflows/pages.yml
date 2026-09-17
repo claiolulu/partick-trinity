@@ -31,8 +31,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # enablement: true —— 仓库设置里还没开 Pages 的话，这一步会用
-      # 本 workflow 的 GITHUB_TOKEN 直接开，省得手点。
+      # ⚠️ 需要仓库 owner 手动开一次 Pages，只此一次：
+      #     Settings → Pages → Build and deployment → Source 选 "GitHub Actions"
+      #
+      # enablement: true 本来是想让 workflow 自己去开，但 GITHUB_TOKEN 开不了：
+      #     Create Pages site failed. Error: Resource not accessible by integration
+      # 创建 Pages 站点属于仓库管理操作，Actions 的 token 没这个权限。
+      # 开过之后这一步就能找到已有的站点，enablement 留着不碍事。
+      #
+      # 如果开完再跑还是失败，并且报的是 environment / branch policy：
+      #     Settings → Environments → github-pages → Deployment branches
+      # 把 claude/city-walk-mapbox-spike-mhrmsb 加进去（或者直接合进 main）。
       - uses: actions/configure-pages@v5
         with:
           enablement: true

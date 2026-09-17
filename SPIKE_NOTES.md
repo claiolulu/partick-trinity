@@ -409,3 +409,27 @@ spike/data/highlights.geojson
 > https://www.openstreetmap.org/copyright — 数据快照 2026-09-07T06:25:20Z
 
 详见 `MAP-DATA.md`。底图署名由各自的地图库自动挂出，**不要去掉**。
+
+---
+
+## 部署
+
+GitHub Pages，workflow 在 `.github/workflows/pages.yml`，推到 `main` 或本 spike 分支就部署。
+
+> ⚠️ **需要仓库 owner 先手动开一次 Pages**（只此一次）：
+> **Settings → Pages → Build and deployment → Source 选 “GitHub Actions”**
+>
+> 首次部署失败在这一步上：
+> ```
+> Create Pages site failed. Error: Resource not accessible by integration
+> ```
+> `enablement: true` 本来是想让 workflow 自己开，但创建 Pages 站点属于仓库管理操作，
+> Actions 的 `GITHUB_TOKEN` 没这个权限。开过之后重跑 workflow 就行。
+
+开好之后的地址：
+
+| | |
+|---|---|
+| 现有版本 | `https://claiolulu.github.io/partick-trinity/` |
+| spike（手机上看这个） | `https://claiolulu.github.io/partick-trinity/spike/` |
+| 阶段 2 探针 | `https://claiolulu.github.io/partick-trinity/spike/mapbox.html` |
