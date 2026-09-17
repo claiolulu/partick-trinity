@@ -1,0 +1,114 @@
+{
+  "id": "kelvin-way",
+  "title": "凯尔文河谷",
+  "subtitle": "BOTANICS TO KELVINGROVE",
+  "city": "Glasgow",
+
+  "_说明": [
+    "这是一份手写的路线配置。改完跑：node spike/tools/build-walk.mjs spike/walks/kelvin-way.json",
+    "",
+    "每个 stop 的字段：",
+    "  id        必填，英文短名，用来做 URL 和内部关联",
+    "  zh / en   站名",
+    "  kicker    卡片顶部那行小字",
+    "  at        [经度, 纬度]。相机锚点；用 radius 选建筑时也是圆心",
+    "  buildings 选哪几栋楼高亮，三种选法可叠加（并集）：",
+    "              osmIds  精确指定，最稳，格式 way/123 或 relation/123",
+    "              names   按 OSM name 匹配（不分大小写、支持子串），默认限 at 周围 600m",
+    "              radius  以 at 为圆心的半径（米），配 minArea / maxCount 过滤",
+    "            整个 buildings 可以省略 —— 那这一站就只飞相机、不高亮（公园就是这种）",
+    "  heightOverride  强制指定这一站所有建筑的高度（米），OSM 没高度数据时用",
+    "  camera    可省。省了就自动推：朝向取行进方向，距离按建筑跨度算",
+    "              bearing 镜头朝向(0=北,顺时针) / pitch 俯仰 / distance 相机到目标的米数 / look 注视点高度",
+    "  facts     四组 [标签, 值]",
+    "  prose     正文段落，可以带 <strong> <em>",
+    "",
+    "⚠️ 下面 botanic 和 kelvinpark 两站的文案是我起草的，没能联网核对。",
+    "   unitower 和 kelvingrove 两站沿用仓库 index.html 里原有的文案。"
+  ],
+
+  "stops": [
+    {
+      "id": "botanic",
+      "zh": "植物园",
+      "en": "Glasgow Botanic Gardens",
+      "kicker": "STOP 01 · GREAT WESTERN ROAD",
+      "at": [-4.28849, 55.87885],
+      "buildings": {
+        "names": ["Kibble Palace", "Glasshouse", "The Botanic Gardens Tearooms", "West Lodge"],
+        "nameRadius": 400
+      },
+      "camera": { "bearing": 200, "pitch": 60, "distance": 240, "look": 8 },
+      "facts": [
+        ["创建", "1817"],
+        ["迁址现地", "1842"],
+        ["Kibble Palace", "1873"],
+        ["保护级别", "Category A"]
+      ],
+      "prose": [
+        "<strong>格拉斯哥植物园</strong>1817 年由皇家植物学会创办，最初在市中心的 Sandyford，1842 年迁到 Great Western Road 边上这片高地，从此成了西区的北端门户。",
+        "园子里最认得出的是<strong>基布尔宫</strong>（Kibble Palace）——一座铸铁加玻璃的穹顶温室。它原本不在这儿：是商人 John Kibble 建在 Loch Long 边自家宅子里的私人温室，1873 年整个拆下来运过来重装。里面养着一片树蕨，还有一圈维多利亚时期的大理石雕像。",
+        "从这里往南，沿 Great Western Road 转进 Byres Road，就是走进西区的主轴。这条路线接下来一路向南，最后落在克莱德河支流凯尔文河的另一头。"
+      ]
+    },
+    {
+      "id": "unitower",
+      "zh": "格拉斯哥大学主楼塔",
+      "en": "University of Glasgow Tower",
+      "kicker": "STOP 02 · GILMOREHILL",
+      "at": [-4.28864, 55.87109],
+      "buildings": { "radius": 130, "minArea": 60, "maxCount": 24 },
+      "camera": { "bearing": 20, "pitch": 66, "distance": 330, "look": 56 },
+      "facts": [
+        ["建校", "1451"],
+        ["迁址", "1870"],
+        ["建筑师", "G. G. Scott"],
+        ["塔尖", "约 85 m"]
+      ],
+      "prose": [
+        "<strong>格拉斯哥大学</strong>成立于 1451 年，是英语世界第四古老的大学。1870 年从高街迁至 Gilmorehill 这片高地，新校舍由乔治·吉尔伯特·斯科特爵士以哥特复兴式设计。",
+        "中央塔楼的石制尖顶由他的儿子约翰·奥尔德里德·斯科特在 1887 年完成，高约 85 米。这栋楼常被称为英国仅次于威斯敏斯特宫的哥特复兴式建筑。",
+        "塔楼下方是那条著名的拱廊——<em>the Cloisters</em>，用一排细柱把东西两个方庭连起来。从 Partick 任何一条街往东北看，这根尖顶都是天际线上最高的那个点。"
+      ]
+    },
+    {
+      "id": "kelvinpark",
+      "zh": "凯尔文格罗夫公园",
+      "en": "Kelvingrove Park",
+      "kicker": "STOP 03 · KELVIN WAY",
+      "at": [-4.28300, 55.87000],
+      "camera": { "bearing": 230, "pitch": 58, "distance": 420, "look": 6 },
+      "facts": [
+        ["辟建", "1852"],
+        ["设计", "Joseph Paxton"],
+        ["纪念喷泉", "1872"],
+        ["类型", "维多利亚公共园林"]
+      ],
+      "prose": [
+        "<strong>凯尔文格罗夫公园</strong>是格拉斯哥最早的一批公共园林之一。市议会 1852 年买下这片河谷地，请来设计水晶宫的 Joseph Paxton 规划——他顺着凯尔文河的坡地做了一套蜿蜒的步道系统，而不是把地推平。",
+        "公园中央是 1872 年落成的<em>斯图尔特纪念喷泉</em>，纪念把 Loch Katrine 的净水引进格拉斯哥的那位市政官员。这件事在当年不是小事：它终结了这座城市的霍乱。",
+        "1888、1901 和 1911 年的三届格拉斯哥国际博览会都在这片园子里举办。下一站那座红砂岩建筑，就是 1901 年那届留下来的。"
+      ]
+    },
+    {
+      "id": "kelvingrove",
+      "zh": "凯尔文格罗夫美术馆",
+      "en": "Kelvingrove Art Gallery & Museum",
+      "kicker": "STOP 04 · ARGYLE STREET",
+      "at": [-4.29063, 55.86858],
+      "buildings": { "osmIds": ["way/26605473"] },
+      "camera": { "bearing": 350, "pitch": 64, "distance": 300, "look": 26 },
+      "facts": [
+        ["开馆", "1901"],
+        ["风格", "西班牙巴洛克复兴"],
+        ["石材", "红砂岩"],
+        ["展厅", "22 间"]
+      ],
+      "prose": [
+        "<strong>凯尔文格罗夫</strong>为 1901 年格拉斯哥国际博览会而建，通体使用 Locharbriggs 红砂岩，是格拉斯哥最容易辨认的建筑之一。",
+        "关于它\"造反了、建筑师跳塔\"的传说流传了一百多年，但那是彻头彻尾的都市传奇——主入口本来就朝向凯尔文格罗夫公园一侧，只是后来人们习惯从 Argyle Street 进来，才误以为它\"背对着\"大街。",
+        "馆藏横跨自然史、军械、苏格兰艺术与欧洲大师作品，其中最有名的是达利的《圣十字若望的基督》，以及悬在西厅上方的一架喷火战斗机。中央大厅的管风琴每天有免费演奏。免费开放。"
+      ]
+    }
+  ]
+}

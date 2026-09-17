@@ -43,6 +43,16 @@
     margin:0;font-size:15px;font-weight:600;letter-spacing:.16em;font-family:var(--mono);
   }
   #head p{margin:2px 0 0;font-size:11px;letter-spacing:.14em;color:var(--ink-faint);font-family:var(--mono)}
+  /* 路线切换器：手机上用原生 select 最稳，也最好按 */
+  #walkPick{
+    pointer-events:auto;margin-top:9px;
+    font:inherit;font-size:12.5px;color:var(--ink);
+    background:#fff;border:1px solid var(--edge-hi);border-radius:999px;
+    padding:6px 30px 6px 12px;max-width:min(70vw,300px);
+    appearance:none;-webkit-appearance:none;cursor:pointer;
+    background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6'><path d='M0 0l5 6 5-6z' fill='%23565c66'/></svg>");
+    background-repeat:no-repeat;background-position:right 11px center;
+  }
   #head .tag{
     pointer-events:auto;position:absolute;right:16px;top:calc(12px + env(safe-area-inset-top,0px));
     font-family:var(--mono);font-size:10px;letter-spacing:.1em;
@@ -146,8 +156,9 @@
 <div id="map"></div>
 
 <header id="head">
-  <h1>PARTICK TRINITY</h1>
-  <p>VECTOR BASEMAP SPIKE</p>
+  <h1 id="h-title">载入中…</h1>
+  <p id="h-sub"></p>
+  <select id="walkPick" aria-label="选择路线"></select>
   <a class="tag" href="../index.html">对比原版 ↗</a>
 </header>
 
@@ -191,13 +202,33 @@ const BASE_STYLE = 'https://tiles.openfreemap.org/styles/liberty';
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const isDesktop = () => matchMedia('(min-width:900px)').matches;
 
+const get = u => fetch(u).then(r => {
+  if (!r.ok) throw new Error(`${u} → HTTP ${r.status}`);
+  return r.json();
+});
+
+/* 一个页面跑多条路线：?walk=<id> 决定读 data/<id>/ 下的哪一套。
+   路线本身是数据，不是代码 —— 新增一条不用动这个文件，
+   写份 spike/walks/<id>.json 再跑 tools/build-walk.mjs 就有了。 */
+const WALKS = await get('data/walks.json');
+const params = new URLSearchParams(location.search);
+const WALK_ID = WALKS.some(w => w.id === params.get('walk'))
+  ? params.get('walk') : WALKS[0].id;
+
 const [WALK, ROUTE, HILITE] = await Promise.all(
-  ['data/walk.json', 'data/route.geojson', 'data/highlights.geojson']
-    .map(u => fetch(u).then(r => {
-      if (!r.ok) throw new Error(`${u} → HTTP ${r.status}`);
-      return r.json();
-    }))
+  ['walk.json', 'route.geojson', 'highlights.geojson']
+    .map(n => get(`data/${WALK_ID}/${n}`))
 );
+
+document.getElementById('h-title').textContent = WALK.title;
+document.getElementById('h-sub').textContent = WALK.subtitle || '';
+document.title = `${WALK.title} · Spike`;
+
+const picker = document.getElementById('walkPick');
+picker.innerHTML = WALKS
+  .map(w => `<option value="${w.id}"${w.id === WALK_ID ? ' selected' : ''}>${w.title} · ${w.stops} 站 ${w.km} km</option>`)
+  .join('');
+picker.addEventListener('change', e => { location.search = `?walk=${e.target.value}`; });
 
 const STOPS = WALK.stops;
 const byId = new Map(STOPS.map(s => [s.id, s]));
@@ -384,7 +415,7 @@ map.on('load', () => {
   statusEl.hidden = true;
   document.getElementById('sheet').hidden = false;
 
-  const want = new URLSearchParams(location.search).get('stop');
+  const want = params.get('stop');
   select(byId.has(want) ? want : STOPS[0].id, { instant: true });
 });
 
@@ -421,7 +452,7 @@ function select(id, { instant = false } = {}) {
   else map.flyTo({ ...cam, duration: 2000, curve: 1.42, essential: true });
 
   renderCard(s);
-  history.replaceState(null, '', `?stop=${id}`);
+  history.replaceState(null, '', `?walk=${WALK_ID}&stop=${id}`);
 }
 
 function renderCard(s) {
