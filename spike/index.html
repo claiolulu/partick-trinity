@@ -144,33 +144,6 @@
 
   #leg{margin:16px 0 0;font-family:var(--mono);font-size:11px;letter-spacing:.06em;color:var(--ink-faint)}
 
-  /* 剖面开关：浮在地图上、贴着窄条上沿 */
-  #cutBtn{
-    position:fixed;z-index:7;left:14px;bottom:calc(var(--bar) + var(--safe-b) + 12px);
-    border:1px solid var(--edge-hi);background:#fff;color:var(--ink);
-    border-radius:999px;padding:9px 16px;font:inherit;font-size:13px;font-weight:500;
-    box-shadow:0 2px 10px rgba(18,24,34,.14);cursor:pointer;
-    transition:background .18s,color .18s,border-color .18s,bottom .34s cubic-bezier(.4,0,.2,1);
-  }
-  #cutBtn[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:#fff}
-  #cutBtn[hidden]{display:none}
-  body.sheet-open #cutBtn{bottom:calc(min(76vh,720px) + 12px)}
-
-  /* 剖面的层清单 */
-  #levels{margin:16px 0 0;padding:0;list-style:none;border-top:1px solid var(--edge)}
-  #levels li{display:flex;gap:10px;padding:9px 0;border-bottom:1px solid var(--edge)}
-  #levels .lv{
-    flex:0 0 auto;width:20px;height:20px;border-radius:3px;margin-top:2px;
-    font-family:var(--mono);font-size:10px;color:#fff;display:grid;place-items:center;
-  }
-  #levels b{display:block;font-size:13.5px;font-weight:600}
-  #levels span{display:block;font-size:13px;color:var(--ink-dim);line-height:1.5}
-  #levels[hidden]{display:none}
-  #levels li.caveat{
-    display:block;border-bottom:0;padding-top:10px;
-    font-size:11.5px;line-height:1.55;color:var(--ink-faint);font-family:var(--mono);
-  }
-
   /* ---------- 状态 / 报错 ---------- */
   #status{
     position:fixed;z-index:9;left:50%;top:50%;transform:translate(-50%,-50%);
@@ -219,8 +192,6 @@
   <a class="tag" href="../index.html">对比原版 ↗</a>
 </header>
 
-<button id="cutBtn" type="button" hidden aria-pressed="false">剖面</button>
-
 <div id="veil"></div>
 
 <section id="sheet" hidden>
@@ -242,7 +213,6 @@
       <p id="en"></p>
       <dl id="facts"></dl>
       <div id="prose"></div>
-      <ul id="levels" hidden></ul>
       <p id="leg"></p>
     </article>
   </div>
@@ -315,8 +285,8 @@ const params = new URLSearchParams(location.search);
 const WALK_ID = WALKS.some(w => w.id === params.get('walk'))
   ? params.get('walk') : WALKS[0].id;
 
-const [WALK, ROUTE, HILITE, CUTAWAY] = await Promise.all(
-  ['walk.json', 'route.geojson', 'highlights.geojson', 'cutaway.geojson']
+const [WALK, ROUTE, HILITE] = await Promise.all(
+  ['walk.json', 'route.geojson', 'highlights.geojson']
     .map(n => get(`data/${WALK_ID}/${n}`))
 );
 
@@ -372,32 +342,7 @@ function paddingFor() {
   const bottom = sheetOpen ? Math.round(Math.min(h * 0.68, h - 200)) : BAR + 10;
   return { top: 60, bottom, left: 16, right: 16 };
 }
-/* 剖面的取景按包围盒算，不按 distance。
-   错开之后那一摞是"宽"的，竖屏手机决定取景的是宽度；
-   而且 bearing 会把盒子转到屏幕上任意角度，所以用对角线做保守估计。 */
-function zoomForBounds(bounds, lat) {
-  const w = (bounds[2] - bounds[0]) * 111320 * Math.cos(lat * Math.PI / 180);
-  const h = (bounds[3] - bounds[1]) * 110540;
-  const diag = Math.hypot(w, h);
-  const vw = Math.max(200, innerWidth - 32);
-  const vh = Math.max(200, (isDesktop() ? viewportH() : viewportH() - BAR) - 90);
-  const mpp = diag / Math.min(vw, vh) * 1.45;   // 1.45 是留给 pitch 纵深的余量
-  return Math.log2(156543.03392 * Math.cos(lat * Math.PI / 180) / mpp);
-}
-
 function camFor(s) {
-  // 剖面打开时用剖面自己的机位：那一摞板被错开之后，
-  // 重心、高度、宽度都跟原楼不一样了，沿用原相机会拍不全
-  const c = (cutOn && s.cutaway?.camera) ? s.cutaway.camera : null;
-  if (c) {
-    return {
-      center: c.center,
-      zoom: zoomForBounds(c.bounds, c.center[1]),
-      pitch: c.pitch ?? 52,
-      bearing: s.camera.bearing,
-      padding: paddingFor(),
-    };
-  }
   return {
     center: s.center,
     zoom: zoomFor(s.camera.distance, s.center[1]),
@@ -525,48 +470,6 @@ map.on('load', () => {
     }
   });
 
-  /* ---- 剖面 / 分层体量 ----
-     不画房间，只把楼按层切开、逐层错开一点。默认整层关着，
-     只有当前站有剖面数据、并且用户按了按钮才显示。 */
-  map.addSource('cutaway', { type: 'geojson', data: CUTAWAY, promoteId: 'fid' });
-  map.addLayer({
-    id: 'cut-3d',
-    type: 'fill-extrusion',
-    source: 'cutaway',
-    filter: ['all', ['==', ['get', 'kind'], 'slab'], ['==', ['get', 'stop'], '__none__']],
-    paint: {
-      // 越往上越浅，读起来像一摞抽开的板
-      'fill-extrusion-color': [
-        'interpolate', ['linear'], ['get', 'level'],
-        0, '#a8541a', 2, '#ed7a19', 4, '#f7bd86'
-      ],
-      'fill-extrusion-base': ['get', 'base'],
-      'fill-extrusion-height': ['get', 'top'],
-      'fill-extrusion-opacity': 0.95,
-      'fill-extrusion-vertical-gradient': true,
-    }
-  });
-  // 层名字用底图自带的字体，避免引一个这个样式里没有的 glyph
-  const face = (firstSymbol && firstSymbol.layout && firstSymbol.layout['text-font']) || ['Noto Sans Regular'];
-  map.addLayer({
-    id: 'cut-label',
-    type: 'symbol',
-    source: 'cutaway',
-    filter: ['all', ['==', ['get', 'kind'], 'label'], ['==', ['get', 'stop'], '__none__']],
-    layout: {
-      'text-field': ['get', 'name'],
-      'text-font': face,
-      'text-size': 12,
-      'text-offset': [0, -0.2],
-      'text-allow-overlap': false,
-    },
-    paint: {
-      'text-color': '#15181d',
-      'text-halo-color': '#ffffff',
-      'text-halo-width': 1.6,
-    }
-  });
-
   /* ---- 起终点 ---- */
   for (const [stop, label] of [[STOPS[0], '起'], [STOPS[STOPS.length - 1], '终']]) {
     const el = document.createElement('div');
@@ -645,8 +548,6 @@ function select(id, { instant = false } = {}) {
   else map.flyTo({ ...cam, duration: 1800, curve: 1.42, essential: true });
 
   renderCard(s);
-  cutOn = false;            // 换站就回到实心，剖面是这一站的一个可选视角
-  applyCutaway();
   history.replaceState(null, '', `?walk=${WALK_ID}&stop=${id}`);
 }
 
@@ -665,28 +566,6 @@ function renderCard(s) {
 
   // prose 里带 <strong>/<em>，是内容的一部分，原样渲染（数据来自本仓库，非用户输入）
   document.getElementById('prose').innerHTML = s.prose.map(p => `<p>${p}</p>`).join('');
-
-  // 剖面：按钮只在这一站真有数据时出现；切站时重置回关闭
-  const lvEl = document.getElementById('levels');
-  if (s.cutaway) {
-    cutBtn.hidden = false;
-    const n = s.cutaway.levels.length;
-    lvEl.innerHTML = s.cutaway.levels.map((l, i) => {
-      const t = n > 1 ? i / (n - 1) : 0;
-      const col = `hsl(${24 - t * 2} ${82 - t * 26}% ${34 + t * 34}%)`;
-      return `<li><i class="lv" style="background:${col}">${i + 1}</i>
-        <div><b>${esc(l.name)}</b><span>${esc(l.note)}</span></div></li>`;
-    }).join('');
-    // 这是示意图，不是平面图 —— 页面上必须说清楚，否则就成了假装精确
-    const z = s.cutaway.zScale || 1;
-    lvEl.insertAdjacentHTML('beforeend',
-      `<li class="caveat">分层是示意，不画房间` +
-      (z !== 1 ? `；竖向已夸张 ${z}×` : '') +
-      `。层高与分界为叙事划分，非实测。</li>`);
-  } else {
-    cutBtn.hidden = true;
-    lvEl.innerHTML = '';
-  }
 
   document.getElementById('leg').textContent = s.nextLegMeters
     ? `下一站 · 沿路约 ${s.nextLegMeters} m`
@@ -726,50 +605,12 @@ const step = d => {
 document.getElementById('prev').addEventListener('click', () => step(-1));
 document.getElementById('next').addEventListener('click', () => step(1));
 
-/* ---------- 剖面开关 ----------
-   打开时：把被剖的那几栋的实心高亮藏掉（同一站其他楼留着当环境），
-   换成一摞抽开的板。关掉就复原。 */
-let cutOn = false;
-const cutBtn = document.getElementById('cutBtn');
-
-function applyCutaway() {
-  const s = byId.get(active);
-  const on = cutOn && !!s?.cutaway;
-  const stopKey = on ? s.id : '__none__';
-
-  map.setFilter('cut-3d', ['all', ['==', ['get', 'kind'], 'slab'], ['==', ['get', 'stop'], stopKey]]);
-  map.setFilter('cut-label', ['all', ['==', ['get', 'kind'], 'label'], ['==', ['get', 'stop'], stopKey]]);
-
-  // 实心层：剖面打开时排掉被剖的那几个 osmId
-  const hide = on ? (s.cutaway.osmIds || []) : [];
-  map.setFilter('hilite-3d',
-    hide.length ? ['!', ['in', ['get', 'osmId'], ['literal', hide]]] : null);
-
-  cutBtn.setAttribute('aria-pressed', String(on));
-  const lv = document.getElementById('levels');
-  lv.hidden = !on;
-}
-
-cutBtn.addEventListener('click', () => {
-  cutOn = !cutOn;
-  applyCutaway();
-  // 不自动展开内容卡 —— 剖面首先是个要看的东西，盖掉就白做了。
-  // 想读每层的说明，照常点窄条展开。
-  const s = byId.get(active);
-  if (s) {
-    const cam = camFor(s);
-    if (reduceMotion) map.jumpTo(cam);
-    else map.easeTo({ ...cam, duration: 700, essential: true });
-  }
-});
-
 /* ---------- 展开 / 收起 ----------
    收起是默认态：地图整屏，只留一条窄条。展开时相机后撤一档。 */
 function setSheet(open) {
   if (isDesktop() || open === sheetOpen) return;
   sheetOpen = open;
   document.getElementById('sheet').classList.toggle('open', open);
-  document.body.classList.toggle('sheet-open', open);
   document.getElementById('veil').classList.toggle('on', open);
   document.getElementById('toggle').setAttribute('aria-expanded', String(open));
   if (open) document.getElementById('card').scrollTop = 0;

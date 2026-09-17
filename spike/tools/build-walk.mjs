@@ -148,84 +148,6 @@ function selectBuildings(stop) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
-   剖面 / 分层体量
-
-   刻意不画房间。把楼按层切成几块水平板，逐层往一个方向错开一点，
-   像抽屉拉出来一半 —— 视觉上有"能看进去"的意思，但它明摆着是个示意，
-   不假装是平面图。所以既不碰版权，也不用假装精度。
-
-   每层的几何就是同一个 footprint 平移之后的副本，平移量是米。
-   不用 fill-extrusion-translate 是因为那个参数的单位是像素，
-   会随 zoom 变 —— 楼层错位的距离得是真实的米，不能缩放时自己漂。
-   ═══════════════════════════════════════════════════════════════════════ */
-function shiftGeom(geom, dx, dy, latRef) {
-  const dLon = dx / mPerLon(latRef), dLat = dy / M_PER_LAT;
-  const ring = r => r.map(([x, y]) => [x + dLon, y + dLat]);
-  return geom.type === 'Polygon'
-    ? { type: 'Polygon', coordinates: geom.coordinates.map(ring) }
-    : { type: 'MultiPolygon', coordinates: geom.coordinates.map(p => p.map(ring)) };
-}
-
-function buildCutaway(stop, ownFeatures, center) {
-  const cut = stop.cutaway;
-  if (!cut) return [];
-
-  // 默认用这一站所有高亮建筑；也可以单独指定（Kibble Palace 就只要它自己）
-  let feats = ownFeatures;
-  if (cut.buildings) {
-    const picked = selectBuildings({ id: stop.id, at: stop.at, buildings: cut.buildings });
-    const want = new Set(picked.map(f => f.properties.osmId));
-    feats = ownFeatures.filter(f => want.has(f.properties.osmId));
-    if (!feats.length) warn(`  ⚠ ${stop.id} 的 cutaway.buildings 没选中任何已高亮的楼`);
-  }
-
-  const offset = cut.offset ?? 7;              // 每层往外错多少米
-  const brg = (cut.bearing ?? 45) * D2R;
-  const ox = Math.sin(brg) * offset, oy = Math.cos(brg) * offset;
-  const GAP = cut.gap ?? 0.22;                 // 层间留多少比例的空气
-  // 竖向夸张：真实层高只有 1~4 m，而横向要错开好几米，
-  // 1:1 画出来会摊成一片而不是一摞。这是示意图，拉高读起来才对 ——
-  // 页面上会注明"竖向已夸张"。
-  const Z = cut.zScale ?? 1;
-
-  const out = [];
-  let slabId = 0;
-  for (const f of feats) {
-    const latRef = center[1];
-    let cum = 0;
-    cut.levels.forEach((lv, i) => {
-      const h = (lv.h ?? 3.2) * Z;
-      const dx = ox * i, dy = oy * i;
-      const geom = shiftGeom(f.geometry, dx, dy, latRef);
-      slabId++;
-      out.push({
-        type: 'Feature',
-        id: 900000 + slabId,
-        properties: {
-          kind: 'slab', stop: stop.id, level: i, osmId: f.properties.osmId,
-          name: lv.name || `L${i}`, note: lv.note || '',
-          base: Math.round(cum * 10) / 10,
-          top: Math.round((cum + h * (1 - GAP)) * 10) / 10,
-        },
-        geometry: geom,
-      });
-      // 标签点：这一层错开之后的中心
-      const b = bboxOf(geom);
-      out.push({
-        type: 'Feature',
-        properties: {
-          kind: 'label', stop: stop.id, level: i,
-          name: lv.name || `L${i}`, top: Math.round((cum + h * (1 - GAP)) * 10) / 10,
-        },
-        geometry: { type: 'Point', coordinates: [(b[0] + b[2]) / 2, (b[1] + b[3]) / 2] },
-      });
-      cum += h;
-    });
-  }
-  return out;
-}
-
-/* ═══════════════════════════════════════════════════════════════════════
    步行路网 + 最短路
    ═══════════════════════════════════════════════════════════════════════ */
 // 数据里只有 kind，没有 access 标签，所以这里按类型粗筛。
@@ -350,8 +272,7 @@ const resolved = CFG.stops.map(stop => {
     ? Math.max((box[2] - box[0]) * mPerLon(center[1]), (box[3] - box[1]) * M_PER_LAT) : 0;
 
   console.log(`  ${stop.id.padEnd(14)} ${String(own.length).padStart(3)} 栋` +
-    (own.length ? `  跨度 ${Math.round(span)} m` : '  （无建筑高亮）') +
-    (stop.cutaway ? `  · 剖面 ${stop.cutaway.levels.length} 层` : ''));
+    (own.length ? `  跨度 ${Math.round(span)} m` : '  （无建筑高亮）'));
   own.filter(f => f.properties.name).slice(0, 4)
      .forEach(f => console.log(`        · ${f.properties.name}  ${f.properties.osmId}  h=${f.properties.height}m`));
 
@@ -386,36 +307,7 @@ for (let i = 0; i < resolved.length - 1; i++) {
   console.log(`  ${resolved[i].stop.id} → ${resolved[i + 1].stop.id}：${p.meters} m，${p.coordinates.length} 个顶点`);
 }
 
-/* --- 3. 剖面几何（要在 stops 之前算，stops 里要引用它选中的 osmId） --- */
-const cutaway = { type: 'FeatureCollection', features: [] };
-const cutawayTargets = new Map();
-const cutawayCams = new Map();
-for (const r of resolved) {
-  const feats = buildCutaway(r.stop, r.own, r.center);
-  cutaway.features.push(...feats);
-  if (!feats.length) continue;
-  const slabs = feats.filter(f => f.properties.kind === 'slab');
-  cutawayTargets.set(r.stop.id, slabs.map(f => f.properties.osmId));
-
-  // 剖面自己的机位：这一摞板被错开之后，重心和高度都跟原楼不一样了，
-  // 沿用原来的相机会拍不全（实测就是顶出画面）。这里按整摞的包围盒重算。
-  const box = [Infinity, Infinity, -Infinity, -Infinity];
-  slabs.forEach(f => bboxOf(f.geometry, box));
-  const cx = (box[0] + box[2]) / 2, cy = (box[1] + box[3]) / 2;
-  const spanM = Math.max((box[2] - box[0]) * mPerLon(cy), (box[3] - box[1]) * M_PER_LAT);
-  const topM = Math.max(...slabs.map(f => f.properties.top));
-  cutawayCams.set(r.stop.id, {
-    center: [Math.round(cx * 1e7) / 1e7, Math.round(cy * 1e7) / 1e7],
-    // 给页面整摞的包围盒：错开之后这东西是"宽"的，
-    // 竖屏手机上决定取景的是宽度不是高度，只给一个 distance 会拍不全（实测就是）
-    bounds: box.map(v => Math.round(v * 1e7) / 1e7),
-    topM: Math.round(topM * 10) / 10,
-    pitch: 52,
-    look: Math.round(topM * 0.45 * 10) / 10,
-  });
-}
-
-/* --- 4. 相机：没写就从路线方向和建筑跨度推 --- */
+/* --- 3. 相机：没写就从路线方向和建筑跨度推 --- */
 const stops = resolved.map((r, i) => {
   const c = r.stop.camera || {};
   // 默认朝向 = 沿行进方向看（从上一站望向这一站），第一站用望向下一站的方向
@@ -447,17 +339,6 @@ const stops = resolved.map((r, i) => {
     nextLegMeters: legs[i]?.meters ?? null,
     facts: r.stop.facts || [],
     prose: r.stop.prose || [],
-    // 有剖面的站，把层的名字/说明也带进 walk.json，卡片里要列出来
-    cutaway: r.stop.cutaway
-      ? {
-          levels: r.stop.cutaway.levels.map(l => ({ name: l.name, note: l.note || '' })),
-          zScale: r.stop.cutaway.zScale ?? 1,
-          // 被剖开的那几栋的 osmId：剖面打开时页面要把对应的实心高亮藏掉，
-          // 同一站其他没被剖的楼要留着当环境
-          osmIds: [...new Set(cutawayTargets.get(r.stop.id) || [])],
-          camera: cutawayCams.get(r.stop.id) || null,
-        }
-      : null,
   };
 });
 
@@ -499,11 +380,6 @@ console.log('\n▶ 输出');
 write('walk.json', walk);
 write('route.geojson', route);
 write('highlights.geojson', highlights);
-// 没有任何剖面时也写一个空集合，页面就不用为 404 写特判
-write('cutaway.geojson', cutaway);
-
-const slabs = cutaway.features.filter(f => f.properties.kind === 'slab').length;
-console.log(`\n✓ ${stops.length} 站 · ${highlights.features.length} 栋高亮建筑` +
-  (slabs ? ` · ${slabs} 块剖面板` : '') + ` · 全程 ${(total / 1000).toFixed(2)} km`);
+console.log(`\n✓ ${stops.length} 站 · ${highlights.features.length} 栋高亮建筑 · 全程 ${(total / 1000).toFixed(2)} km`);
 if (warnings.length) console.log(`\n注意 ${warnings.length} 条（见上）`);
 console.log(`\n打开：spike/index.html?walk=${CFG.id}\n`);
