@@ -1,0 +1,7 @@
+# 环境变量：Mapbox token 之类的东西一律不进仓库
+.env
+.env.*
+!.env.example
+
+node_modules/
+.DS_Store
