@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<title>阶段 2 · Mapbox 建筑 id 稳定性探针</title>
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/mapbox-gl@3/dist/mapbox-gl.css">
+<style>
+  :root{
+    --ink:#15181d; --dim:#565c66; --faint:#959ba6;
+    --edge:rgba(18,24,34,.14); --edge-hi:rgba(18,24,34,.30);
+    --accent:#ed7a19; --deep:#a84b0d; --ok:#177245; --bad:#b3261e;
+    --mono:"Azeret Mono",ui-monospace,SFMono-Regular,Menlo,"PingFang SC",monospace;
+    --font:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",system-ui,sans-serif;
+    --panel:46vh;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{height:100%;margin:0}
+  body{font-family:var(--font);color:var(--ink);background:#fff;overflow:hidden;font-size:14px}
+  #map{position:fixed;left:0;right:0;top:0;bottom:var(--panel)}
+
+  /* ---------- token 闸门 ---------- */
+  #gate{
+    position:fixed;inset:0;z-index:20;background:#fff;display:grid;place-items:center;padding:22px;
+  }
+  #gate .box{max-width:460px;width:100%}
+  #gate h1{font-size:19px;margin:0 0 10px}
+  #gate p{color:var(--dim);line-height:1.6;margin:0 0 14px}
+  #gate code{background:#f1f2f4;padding:1px 5px;border-radius:3px;font-family:var(--mono);font-size:12px}
+  #gate input{
+    width:100%;padding:12px;border:1px solid var(--edge-hi);border-radius:4px;
+    font-family:var(--mono);font-size:13px;
+  }
+  #gate button{
+    margin-top:10px;width:100%;padding:13px;border:0;border-radius:4px;
+    background:var(--ink);color:#fff;font:inherit;font-size:15px;font-weight:600;cursor:pointer;
+  }
+  #gate .warn{
+    margin-top:16px;padding:11px 13px;background:#fff6ed;border:1px solid #f0c9a0;
+    border-radius:4px;font-size:12.5px;line-height:1.6;color:var(--deep);
+  }
+  #gate[hidden]{display:none}
+
+  /* ---------- 面板 ---------- */
+  #panel{
+    position:fixed;left:0;right:0;bottom:0;height:var(--panel);z-index:10;
+    background:#fff;border-top:1px solid var(--edge);display:flex;flex-direction:column;
+    padding-bottom:env(safe-area-inset-bottom,0px);
+  }
+  #bar{
+    display:flex;gap:6px;align-items:center;padding:8px 10px;border-bottom:1px solid var(--edge);
+    overflow-x:auto;scrollbar-width:none;flex:0 0 auto;
+  }
+  #bar::-webkit-scrollbar{display:none}
+  #bar button{
+    flex:0 0 auto;border:1px solid var(--edge-hi);background:#fff;border-radius:4px;
+    padding:7px 11px;font:inherit;font-size:12.5px;cursor:pointer;white-space:nowrap;
+  }
+  #bar button.k{background:var(--ink);border-color:var(--ink);color:#fff}
+  #zoomTag{
+    flex:0 0 auto;font-family:var(--mono);font-size:11.5px;color:var(--dim);
+    padding:0 6px;white-space:nowrap;
+  }
+  #body{flex:1 1 auto;overflow-y:auto;padding:10px 12px 18px;-webkit-overflow-scrolling:touch}
+
+  h2{font-size:11px;letter-spacing:.12em;font-family:var(--mono);color:var(--faint);
+     margin:14px 0 7px;text-transform:uppercase}
+  h2:first-child{margin-top:0}
+
+  .verdict{padding:11px 13px;border-radius:4px;font-size:13.5px;line-height:1.55;border:1px solid}
+  .verdict.none{background:#f7f8f9;border-color:var(--edge);color:var(--dim)}
+  .verdict.ok{background:#eef6f1;border-color:#9ccfb4;color:var(--ok)}
+  .verdict.bad{background:#fdeeed;border-color:#eda9a4;color:var(--bad)}
+  .verdict b{display:block;font-size:15px;margin-bottom:3px}
+
+  table{width:100%;border-collapse:collapse;font-size:12px;font-family:var(--mono)}
+  th,td{text-align:left;padding:6px 7px;border-bottom:1px solid var(--edge);vertical-align:top}
+  th{color:var(--faint);font-weight:500;font-size:10.5px;letter-spacing:.08em}
+  td.id{word-break:break-all;max-width:none}
+  tr.stable td.v{color:var(--ok)}
+  tr.unstable td.v{color:var(--bad);font-weight:500}
+
+  pre{
+    background:#f7f8f9;border:1px solid var(--edge);border-radius:4px;padding:10px;
+    font-family:var(--mono);font-size:11px;line-height:1.5;overflow-x:auto;margin:0;
+    white-space:pre-wrap;word-break:break-word;max-height:230px;overflow-y:auto;
+  }
+  .hint{color:var(--faint);font-size:12px;line-height:1.6;margin:8px 0 0}
+
+  #toast{
+    position:fixed;left:50%;top:16px;transform:translateX(-50%);z-index:30;
+    background:rgba(21,24,29,.94);color:#fff;padding:9px 15px;border-radius:4px;
+    font-family:var(--mono);font-size:12px;max-width:88vw;text-align:center;pointer-events:none;
+  }
+  #toast[hidden]{display:none}
+
+  @media (min-width:900px){
+    :root{--panel:0px}
+    #map{right:440px;bottom:0}
+    #panel{left:auto;width:440px;height:100%;top:0;border-top:0;border-left:1px solid var(--edge)}
+  }
+</style>
+</head>
+<body>
+
+<div id="map"></div>
+
+<section id="panel">
+  <div id="bar">
+    <button id="probeBtn" class="k" type="button">探针：开</button>
+    <span id="zoomTag">z —</span>
+    <button id="z16" type="button">z16</button>
+    <button id="z17" type="button">z17</button>
+    <button id="z18" type="button">z18</button>
+    <button id="reload" type="button">重新加载</button>
+    <button id="exportBtn" type="button">导出</button>
+    <button id="clear" type="button">清空</button>
+  </div>
+  <div id="body">
+    <h2>结论</h2>
+    <div id="verdict" class="verdict none">还没有样本。放大到 z16 以上，<b style="display:inline">反复点同一栋楼</b>，
+      换几个 zoom，再点"重新加载"重来一次 —— 下面会自动比对同一栋楼拿到的 id。</div>
+
+    <h2>按目标建筑分组</h2>
+    <div id="groups"><p class="hint">还没有点过任何建筑。</p></div>
+
+    <h2>最近一次命中的 feature</h2>
+    <pre id="dump">（点一下地图上的建筑）</pre>
+  </div>
+</section>
+
+<div id="gate" hidden>
+  <div class="box">
+    <h1>需要一个 Mapbox access token</h1>
+    <p>这一页是阶段 2 的探针，要用 Mapbox Standard 底图，所以必须有 token。
+      token <b>不会</b>提交进仓库 —— 只存在你这台设备的 <code>localStorage</code> 里。</p>
+    <input id="tokenInput" type="text" inputmode="text" autocomplete="off" autocapitalize="off"
+           spellcheck="false" placeholder="pk.eyJ1Ijoi…">
+    <button id="tokenGo" type="button">开始</button>
+    <p class="hint" style="margin-top:12px">也可以用 <code>?token=pk.…</code> 打开本页，
+      读到之后会立刻从地址栏里抹掉再存起来。</p>
+    <div class="warn">
+      <b>两件事先说清楚：</b><br>
+      1. 这一页每加载一次就算一次 Mapbox map load，会计费。别挂着不管。<br>
+      2. 用一个只给了 <code>styles:read</code> / <code>fonts:read</code> 的公开 token，
+      并且在 Mapbox 后台给它加上 URL 白名单。
+    </div>
+  </div>
+</div>
+
+<div id="toast" hidden></div>
+
+<script src="https://cdn.jsdelivr.net/npm/mapbox-gl@3/dist/mapbox-gl.js"></script>
+<script>
+/* ═══════════════════════════════════════════════════════════════════════
+   阶段 2 · 建筑高亮探针
+
+   要回答的问题只有一个：
+     同一栋楼，刷新页面之后、换一个 zoom 之后，拿到的 feature id 还是同一个吗？
+
+   一致  → A 方案：配置文件里按 id 指定建筑，footprint 数据可以整个不要
+   不一致 → B 方案：自己存 footprint，加一层 fill-extrusion 做高亮
+
+   这一页不替你下结论，它只是把证据收齐：每次点击记一条样本，
+   带上 zoom、当次页面加载的 sessionId、以及底图给的完整 feature。
+   同一栋楼的样本按点击位置聚类（25 m 内算同一个目标），然后比对 id。
+   ═══════════════════════════════════════════════════════════════════════ */
+
+const TOKEN_KEY = 'spike.mapbox.token';
+const DB_KEY    = 'spike.probe.v2';
+const $ = id => document.getElementById(id);
+
+function toast(msg, ms = 2200) {
+  const t = $('toast');
+  t.textContent = msg; t.hidden = false;
+  clearTimeout(toast._t); toast._t = setTimeout(() => t.hidden = true, ms);
+}
+
+/* ---------- token：URL > localStorage > 手输，三条路都不进仓库 ---------- */
+function readToken() {
+  const url = new URL(location.href);
+  const fromUrl = url.searchParams.get('token');
+  if (fromUrl) {
+    try { localStorage.setItem(TOKEN_KEY, fromUrl); } catch {}
+    // 立刻从地址栏抹掉，免得截图或者分享链接的时候把 token 带出去
+    url.searchParams.delete('token');
+    history.replaceState(null, '', url.toString());
+    return fromUrl;
+  }
+  try { return localStorage.getItem(TOKEN_KEY) || ''; } catch { return ''; }
+}
+
+const TOKEN = readToken();
+
+/* ---------- 样本库 ---------- */
+const SESSION = Math.random().toString(36).slice(2, 8);   // 每次页面加载一个新号
+const load = () => { try { return JSON.parse(localStorage.getItem(DB_KEY)) || []; } catch { return []; } };
+const save = g => { try { localStorage.setItem(DB_KEY, JSON.stringify(g)); } catch {} };
+let GROUPS = load();
+
+const R = 6371000, D2R = Math.PI / 180;
+function metres(a, b) {
+  const dx = (a[0] - b[0]) * D2R * R * Math.cos(a[1] * D2R);
+  const dy = (a[1] - b[1]) * D2R * R;
+  return Math.hypot(dx, dy);
+}
+
+function record(lngLat, zoom, feature) {
+  // id 可能是数字、字符串，也可能是 {id, namespace} 这种复合值 —— 一律序列化成字符串比
+  const idRaw = feature && feature.id !== undefined ? feature.id : null;
+  const id = idRaw === null || idRaw === undefined ? '(无 id)'
+           : (typeof idRaw === 'object' ? JSON.stringify(idRaw) : String(idRaw));
+  const sample = {
+    id, session: SESSION, zoom: +zoom.toFixed(2), t: Date.now(),
+    name: (feature && feature.properties && (feature.properties.name || feature.properties.class)) || '',
+  };
+  let g = GROUPS.find(g => metres(g.at, lngLat) < 25);
+  if (!g) { g = { at: lngLat, samples: [] }; GROUPS.push(g); }
+  g.samples.push(sample);
+  save(GROUPS);
+  render();
+}
+
+/* ---------- 渲染比对表 ---------- */
+function render() {
+  const wrap = $('groups');
+  if (!GROUPS.length) {
+    wrap.innerHTML = '<p class="hint">还没有点过任何建筑。</p>';
+    $('verdict').className = 'verdict none';
+    return;
+  }
+
+  let anyUnstable = false, anyCrossSession = false, anyCrossZoom = false, comparable = 0;
+
+  wrap.innerHTML = GROUPS.map((g, i) => {
+    const ids = [...new Set(g.samples.map(s => s.id))];
+    const sessions = [...new Set(g.samples.map(s => s.session))];
+    const zooms = [...new Set(g.samples.map(s => Math.round(s.zoom)))].sort((a, b) => a - b);
+    const stable = ids.length === 1;
+    if (!stable) anyUnstable = true;
+
+    // 只有真的跨过刷新 / 跨过 zoom，这一组才算"验过"
+    if (sessions.length > 1) { comparable++; if (!stable) anyCrossSession = true; }
+    if (zooms.length > 1)    { comparable++; if (!stable) anyCrossZoom = true; }
+
+    const perZoom = zooms.map(z => {
+      const s = [...new Set(g.samples.filter(x => Math.round(x.zoom) === z).map(x => x.id))];
+      return `<tr class="${s.length === 1 ? 'stable' : 'unstable'}">
+        <td>z${z}</td><td class="id v">${s.map(esc).join('<br>')}</td></tr>`;
+    }).join('');
+
+    const perSession = sessions.map(ss => {
+      const s = [...new Set(g.samples.filter(x => x.session === ss).map(x => x.id))];
+      return `<tr class="${s.length === 1 ? 'stable' : 'unstable'}">
+        <td>#${esc(ss)}</td><td class="id v">${s.map(esc).join('<br>')}</td></tr>`;
+    }).join('');
+
+    return `
+      <h2 style="margin-top:${i ? 18 : 10}px">目标 ${i + 1}${g.samples[0].name ? ' · ' + esc(g.samples[0].name) : ''}
+        — ${g.samples.length} 次点击 / ${ids.length} 个不同 id</h2>
+      <table>
+        <tr><th>ZOOM</th><th>拿到的 ID</th></tr>${perZoom}
+        <tr><th>页面加载</th><th>拿到的 ID</th></tr>${perSession}
+      </table>`;
+  }).join('');
+
+  const v = $('verdict');
+  if (!comparable) {
+    v.className = 'verdict none';
+    v.innerHTML = '<b>样本还不够</b>同一栋楼至少要在两个不同 zoom 下各点一次，' +
+      '并且点"重新加载"之后再点一次 —— 跨刷新和跨缩放都比过，结论才算数。';
+  } else if (!anyUnstable) {
+    v.className = 'verdict ok';
+    v.innerHTML = '<b>id 稳定 → 可以走 A 方案</b>已比对的目标里，跨 zoom、跨刷新拿到的都是同一个 id。' +
+      '可以在配置里直接按 id 指定建筑，省掉自带的 footprint 数据。' +
+      '（仍然建议多点几栋、隔几天再验一次：Mapbox 的瓦片会随版本更新。）';
+  } else {
+    v.className = 'verdict bad';
+    v.innerHTML = '<b>id 不稳定 → 走 B 方案</b>同一栋楼拿到过不同的 id' +
+      (anyCrossZoom ? '（换 zoom 就变）' : '') + (anyCrossSession ? '（刷新就变）' : '') +
+      '。别再试 A 方案了：自己存 footprint，加一层 fill-extrusion 做高亮。' +
+      '本仓库的 <code>spike/data/highlights.geojson</code> 已经是这条路。';
+  }
+}
+const esc = t => String(t).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+/* ---------- 地图 ---------- */
+function boot() {
+  mapboxgl.accessToken = TOKEN;
+
+  const map = window.__map = new mapboxgl.Map({
+    container: 'map',
+    style: 'mapbox://styles/mapbox/standard',
+    center: [-4.3040, 55.8690],     // Partick，和现有 index.html 的 ORIGIN 同一个点
+    zoom: 16.4,
+    pitch: 58,
+    bearing: 20,
+    antialias: true,
+  });
+  map.addControl(new mapboxgl.NavigationControl({ visualizePitch: true }), 'top-right');
+
+  map.on('error', e => {
+    const m = e && e.error && e.error.message || '未知错误';
+    toast('地图报错：' + m, 6000);
+    if (/401|Unauthorized|access token/i.test(m)) {
+      try { localStorage.removeItem(TOKEN_KEY); } catch {}
+      toast('token 无效，已清掉。刷新重填。', 8000);
+    }
+  });
+
+  map.on('style.load', () => {
+    /* Standard 的 config 项在不同小版本里改过名字（show3dLandmarks / showLandmarkIcons …），
+       所以逐个试、试不动就跳过，并把实际生效的列出来，不假装都设上了。 */
+    const wanted = {
+      show3dLandmarks: false,          // 地标是真模型，feature-state 高亮对它无效 → 关掉
+      showLandmarkIcons: false,
+      colorBuildingHighlight: '#f0a566',
+      colorBuildingSelect: '#ed7a19',
+      lightPreset: 'day',
+    };
+    const applied = [], skipped = [];
+    for (const [k, val] of Object.entries(wanted)) {
+      try { map.setConfigProperty('basemap', k, val); applied.push(k); }
+      catch { skipped.push(k); }
+    }
+    console.log('[standard config] 生效:', applied, '| 不认识:', skipped);
+    toast('config 生效 ' + applied.length + ' 项' + (skipped.length ? '，跳过 ' + skipped.join(',') : ''), 4000);
+
+    wireProbe(map);
+  });
+
+  map.on('move', () => $('zoomTag').textContent = 'z' + map.getZoom().toFixed(1));
+
+  for (const [btn, z] of [['z16', 16], ['z17', 17], ['z18', 18]])
+    $(btn).addEventListener('click', () => map.easeTo({ zoom: z, duration: 600 }));
+
+  $('reload').addEventListener('click', () => location.reload());
+  $('clear').addEventListener('click', () => {
+    if (!confirm('清空所有探针样本？')) return;
+    GROUPS = []; save(GROUPS); render(); $('dump').textContent = '（点一下地图上的建筑）';
+  });
+  $('exportBtn').addEventListener('click', () => {
+    const blob = new Blob([JSON.stringify(GROUPS, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'building-id-probe.json';
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  });
+
+  render();
+}
+
+/* ---------- 探针本体 ---------- */
+let probeOn = true;
+$('probeBtn').addEventListener('click', () => {
+  probeOn = !probeOn;
+  $('probeBtn').textContent = '探针：' + (probeOn ? '开' : '关');
+  $('probeBtn').classList.toggle('k', probeOn);
+});
+
+function wireProbe(map) {
+  const target = { featuresetId: 'buildings', importId: 'basemap' };
+  let selected = null, hoveredF = null;
+
+  const onHit = (feature, lngLat) => {
+    if (!probeOn || !feature) return;
+
+    // feature-state 高亮：这本身就是 A 方案能不能用的一半答案
+    if (selected) { try { map.setFeatureState(selected, { select: false }); } catch {} }
+    selected = feature;
+    try { map.setFeatureState(feature, { select: true }); }
+    catch (e) { console.warn('setFeatureState 失败', e); }
+
+    $('dump').textContent = JSON.stringify({
+      id: feature.id,
+      idType: typeof feature.id,
+      properties: feature.properties,
+      geometryType: feature.geometry && feature.geometry.type,
+      _note: '↑ 底图原样给的。id 就是 A 方案要拿来当主键的东西。',
+    }, null, 2);
+
+    record([lngLat.lng, lngLat.lat], map.getZoom(), feature);
+  };
+
+  const useInteractions = () => {
+    // Mapbox GL JS v3 的 Interactions API
+    map.addInteraction('b-click', {
+      type: 'click', target,
+      handler: ({ feature, lngLat }) => { onHit(feature, lngLat || map.getCenter()); }
+    });
+    map.addInteraction('b-hover', {
+      type: 'mouseenter', target,
+      handler: ({ feature }) => {
+        if (hoveredF) { try { map.setFeatureState(hoveredF, { highlight: false }); } catch {} }
+        hoveredF = feature;
+        try { map.setFeatureState(feature, { highlight: true }); } catch {}
+      }
+    });
+    map.addInteraction('b-leave', {
+      type: 'mouseleave', target,
+      handler: () => {
+        if (hoveredF) { try { map.setFeatureState(hoveredF, { highlight: false }); } catch {} }
+        hoveredF = null;
+      }
+    });
+    console.log('[probe] 用 addInteraction + buildings featureset');
+  };
+
+  const useQueryFallback = why => {
+    // 没有 Interactions API（或者它报错）就退回 queryRenderedFeatures，至少还能拿到 id
+    map.on('click', e => {
+      const f = map.queryRenderedFeatures(e.point)
+        .find(f => /building/i.test((f.layer && f.layer.id) || ''));
+      onHit(f, e.lngLat);
+    });
+    toast('已退回 queryRenderedFeatures：' + why, 5000);
+    console.log('[probe] 退回 queryRenderedFeatures —', why);
+  };
+
+  if (typeof map.addInteraction !== 'function') {
+    useQueryFallback('这个版本没有 addInteraction');
+  } else {
+    try { useInteractions(); }
+    catch (e) { useQueryFallback((e && e.message) || 'addInteraction 报错'); }
+  }
+}
+
+/* ---------- 入口：放在最后，确保上面的 GROUPS / render 都已经初始化 ---------- */
+if (!TOKEN) {
+  $('gate').hidden = false;
+  $('tokenGo').addEventListener('click', () => {
+    const v = $('tokenInput').value.trim();
+    if (!v) return;
+    try { localStorage.setItem(TOKEN_KEY, v); } catch {}
+    location.reload();
+  });
+  $('tokenInput').addEventListener('keydown', e => { if (e.key === 'Enter') $('tokenGo').click(); });
+  render();
+} else {
+  boot();
+}
+</script>
+</body>
+</html>
