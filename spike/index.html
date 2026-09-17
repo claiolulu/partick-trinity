@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<meta name="theme-color" content="#15181d">
+<title>Partick Trinity · 矢量底图 Spike</title>
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/maplibre-gl@5.6.1/dist/maplibre-gl.css">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600&family=Azeret+Mono:wght@400;500&display=swap">
+
+<style>
+  /* 配色刻意沿用 index.html：白模 + 单一橙色强调，方便和现有版本并排比 */
+  :root{
+    --ink:#15181d; --ink-dim:#565c66; --ink-faint:#959ba6;
+    --panel:#ffffff; --edge:rgba(18,24,34,.14); --edge-hi:rgba(18,24,34,.30);
+    --accent:#ed7a19; --accent-deep:#a84b0d;
+    --font:"Archivo","PingFang SC","Hiragino Sans GB","Microsoft YaHei",
+           -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
+    --mono:"Azeret Mono","PingFang SC",ui-monospace,SFMono-Regular,Menlo,monospace;
+    --sheet:52vh;
+    --safe-b:env(safe-area-inset-bottom,0px);
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{height:100%;margin:0;overscroll-behavior:none}
+  body{
+    background:#fff;color:var(--ink);font-family:var(--font);font-size:15px;line-height:1.55;
+    -webkit-font-smoothing:antialiased;overflow:hidden;
+  }
+
+  #map{position:fixed;inset:0}
+  .maplibregl-ctrl-attrib{font-size:10px}
+  .maplibregl-ctrl-bottom-right{margin-bottom:calc(var(--sheet) - 4px)}
+
+  /* ---------- 顶部标题 ---------- */
+  #head{
+    position:fixed;left:0;right:0;top:0;z-index:5;pointer-events:none;
+    padding:calc(12px + env(safe-area-inset-top,0px)) 16px 22px;
+    background:linear-gradient(180deg,rgba(255,255,255,.94),rgba(255,255,255,.72) 55%,rgba(255,255,255,0));
+  }
+  #head h1{
+    margin:0;font-size:15px;font-weight:600;letter-spacing:.16em;font-family:var(--mono);
+  }
+  #head p{margin:2px 0 0;font-size:11px;letter-spacing:.14em;color:var(--ink-faint);font-family:var(--mono)}
+  #head .tag{
+    pointer-events:auto;position:absolute;right:16px;top:calc(12px + env(safe-area-inset-top,0px));
+    font-family:var(--mono);font-size:10px;letter-spacing:.1em;
+    border:1px solid var(--edge-hi);border-radius:999px;padding:4px 9px;
+    background:#fff;color:var(--ink-dim);text-decoration:none;
+  }
+
+  /* ---------- 底部内容卡（手机是主界面，桌面变左栏） ---------- */
+  #sheet{
+    position:fixed;left:0;right:0;bottom:0;z-index:6;
+    height:var(--sheet);
+    background:var(--panel);
+    border-top:1px solid var(--edge);
+    box-shadow:0 -12px 34px rgba(18,24,34,.12);
+    display:flex;flex-direction:column;
+    padding-bottom:var(--safe-b);
+  }
+
+  /* 站点横向 chip 条 —— 手机上比竖列表好按 */
+  #rail{
+    display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;
+    padding:10px 14px;border-bottom:1px solid var(--edge);flex:0 0 auto;
+  }
+  #rail::-webkit-scrollbar{display:none}
+  .chip{
+    flex:0 0 auto;border:1px solid var(--edge-hi);background:#fff;color:var(--ink-dim);
+    border-radius:999px;padding:7px 13px;font:inherit;font-size:13px;cursor:pointer;
+    display:flex;align-items:center;gap:7px;white-space:nowrap;
+    transition:background .16s,border-color .16s,color .16s;
+  }
+  .chip b{font-family:var(--mono);font-size:11px;font-weight:500;color:var(--ink-faint)}
+  .chip[aria-current="true"]{background:var(--ink);border-color:var(--ink);color:#fff}
+  .chip[aria-current="true"] b{color:var(--accent)}
+
+  #card{flex:1 1 auto;overflow-y:auto;padding:16px 18px 24px;-webkit-overflow-scrolling:touch}
+  #kicker{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;color:var(--accent-deep);margin:0 0 6px}
+  #zh{margin:0;font-size:25px;font-weight:600;line-height:1.15;letter-spacing:.005em}
+  #en{margin:3px 0 0;font-size:12px;letter-spacing:.06em;color:var(--ink-faint);font-family:var(--mono)}
+
+  #facts{display:grid;grid-template-columns:repeat(2,1fr);gap:1px;background:var(--edge);
+         border:1px solid var(--edge);margin:15px 0 4px}
+  #facts div{background:#fff;padding:8px 10px}
+  #facts dt{font-family:var(--mono);font-size:9.5px;letter-spacing:.1em;color:var(--ink-faint);margin:0}
+  #facts dd{margin:2px 0 0;font-size:13.5px;font-weight:500}
+
+  #prose p{margin:12px 0 0;font-size:14.5px;color:#2c333c}
+  #prose strong{font-weight:600}
+  #prose em{font-style:italic;color:var(--ink-dim)}
+
+  #leg{margin:16px 0 0;font-family:var(--mono);font-size:11px;letter-spacing:.06em;color:var(--ink-faint)}
+
+  /* 上一站 / 下一站 */
+  #nav{
+    flex:0 0 auto;display:flex;gap:8px;padding:10px 14px 12px;border-top:1px solid var(--edge);
+    background:#fff;
+  }
+  #nav button{
+    flex:1;border:1px solid var(--edge-hi);background:#fff;color:var(--ink);
+    border-radius:4px;padding:11px;font:inherit;font-size:14px;font-weight:500;cursor:pointer;
+  }
+  #nav button:disabled{color:var(--ink-faint);border-color:var(--edge);cursor:default}
+  #nav button.primary{background:var(--ink);border-color:var(--ink);color:#fff}
+  #nav button.primary:disabled{background:#eceef1;border-color:var(--edge);color:var(--ink-faint)}
+
+  /* ---------- 状态 / 报错 ---------- */
+  #status{
+    position:fixed;z-index:9;left:50%;top:50%;transform:translate(-50%,-50%);
+    background:rgba(21,24,29,.93);color:#fff;border-radius:4px;padding:11px 16px;
+    font-family:var(--mono);font-size:12px;letter-spacing:.04em;max-width:82vw;text-align:center;
+  }
+  #status.err{background:var(--accent-deep)}
+  #status[hidden]{display:none}
+  /* 永远不要挡住点击：报错提示是给人看的，不该把界面锁死 */
+  #status{pointer-events:none}
+
+  /* ---------- 桌面：卡片变左栏，地图占右边 ---------- */
+  @media (min-width:900px){
+    :root{--sheet:0px}
+    #sheet{
+      top:0;right:auto;width:396px;height:100%;
+      border-top:0;border-right:1px solid var(--edge);
+      box-shadow:0 0 40px rgba(18,24,34,.10);
+    }
+    #head{left:396px;padding-top:14px}
+    #rail{
+      order:2;flex-wrap:wrap;overflow:visible;border-bottom:0;border-top:1px solid var(--edge);
+    }
+    #card{padding:26px 26px 18px}
+    #zh{font-size:30px}
+    #nav{order:3}
+    .maplibregl-ctrl-bottom-right{margin-bottom:0}
+    .maplibregl-ctrl-bottom-left{margin-left:404px}
+  }
+
+  @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+
+<body>
+
+<div id="map"></div>
+
+<header id="head">
+  <h1>PARTICK TRINITY</h1>
+  <p>VECTOR BASEMAP SPIKE</p>
+  <a class="tag" href="../index.html">对比原版 ↗</a>
+</header>
+
+<section id="sheet" hidden>
+  <nav id="rail" aria-label="路线站点"></nav>
+  <article id="card">
+    <p id="kicker"></p>
+    <h2 id="zh"></h2>
+    <p id="en"></p>
+    <dl id="facts"></dl>
+    <div id="prose"></div>
+    <p id="leg"></p>
+  </article>
+  <div id="nav">
+    <button id="prev" type="button">← 上一站</button>
+    <button id="next" type="button" class="primary">下一站 →</button>
+  </div>
+</section>
+
+<div id="status">正在加载底图…</div>
+
+<script src="https://cdn.jsdelivr.net/npm/maplibre-gl@5.6.1/dist/maplibre-gl.js"></script>
+<script>
+// 手机上没有 DevTools，脚本错误直接摆到屏幕中间
+const statusEl = document.getElementById('status');
+function fail(msg){ statusEl.hidden = false; statusEl.className = 'err'; statusEl.textContent = msg; }
+addEventListener('error', e => fail('脚本错误：' + (e.message || e)));
+addEventListener('unhandledrejection', e => fail('加载失败：' + (e.reason && e.reason.message || e.reason)));
+if (typeof maplibregl === 'undefined') fail('MapLibre 没加载成功 —— CDN 被挡了，或者用 file:// 打开的。');
+</script>
+
+<script type="module">
+/* ═══════════════════════════════════════════════════════════════════
+   阶段 3 的数据全部在 data/ 下，这个文件不硬编码任何站点内容。
+   walk.json        站点配置（相机 / 建筑标识 / 文案）
+   route.geojson    路线：整条 + 分段
+   highlights.geojson  重点建筑的真实 OSM 轮廓（阶段 2 结论：走 B 方案）
+   ═══════════════════════════════════════════════════════════════════ */
+
+const BASE_STYLE = 'https://tiles.openfreemap.org/styles/liberty';
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const isDesktop = () => matchMedia('(min-width:900px)').matches;
+
+const [WALK, ROUTE, HILITE] = await Promise.all(
+  ['data/walk.json', 'data/route.geojson', 'data/highlights.geojson']
+    .map(u => fetch(u).then(r => {
+      if (!r.ok) throw new Error(`${u} → HTTP ${r.status}`);
+      return r.json();
+    }))
+);
+
+const STOPS = WALK.stops;
+const byId = new Map(STOPS.map(s => [s.id, s]));
+
+/* ---------- 相机：distance(米) → zoom，按当前视口算 ----------
+   两件事必须一起处理，少一件取景就不对：
+
+   1) 镜头不一样宽。walk.json 里的 distance 是从现有 three.js 版本的机位换算来的，
+      那台相机是 55° 垂直 fov；MapLibre / Mapbox 固定 36.87°，窄得多。
+      同一个距离用窄镜头拍，画面会紧一大截 —— 实测河畔博物馆直接顶满全屏。
+      所以这里不拿 distance 直接算，先换成"要看到多少米高的画面"：
+          span = 2 · distance · tan(fov_src / 2)
+      再由 span 反推 zoom，取景就和原版对上了。
+
+   2) 视口不一样高。同一个 span 在手机和桌面要换出不同的 zoom，
+      而且手机下半屏被内容卡盖住，可用高度只有一半左右。 */
+const FOV_SRC = 55 * Math.PI / 180;                 // 现有 index.html 的 PerspectiveCamera(55, …)
+const SPAN_K = 2 * Math.tan(FOV_SRC / 2);           // ≈ 1.041
+
+function zoomFor(distanceM, lat) {
+  const h = Math.max(320, visualViewport ? visualViewport.height : innerHeight);
+  const usable = isDesktop() ? h : h * 0.52;        // 手机上卡片盖掉了下半屏
+  const mpp = (distanceM * SPAN_K) / usable;        // 每像素多少米
+  return Math.log2(156543.03392 * Math.cos(lat * Math.PI / 180) / mpp);
+}
+function paddingFor() {
+  // 把注视点推到可视区中间，而不是被卡片盖住的屏幕正中
+  return isDesktop()
+    ? { left: 396, top: 40, right: 40, bottom: 40 }
+    : { top: 70, bottom: Math.round(innerHeight * 0.52), left: 16, right: 16 };
+}
+
+const map = window.__map = new maplibregl.Map({
+  container: 'map',
+  style: BASE_STYLE,
+  center: STOPS[0].center,
+  zoom: 14,
+  pitch: 0,
+  bearing: 0,
+  antialias: true,
+  attributionControl: { compact: true },
+  maxPitch: 75,
+  hash: false,
+});
+map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-right');
+map.touchZoomRotate.enableRotation();
+
+/* 只有"样式没加载出来"才算致命。
+   单个瓦片取不到是常态——手机信号抖一下就会有，MapLibre 自己会重试，
+   为这个把整块界面盖掉（而且盖住之后连站点都点不动了）是错的。 */
+let styleReady = false;
+map.on('error', e => {
+  const err = e && e.error;
+  if (!err) return;
+  if (styleReady) { console.warn('[map]', err.message || err); return; }
+  fail('地图报错：' + (err.message || err));
+});
+
+let active = null;
+let hovered = null;
+
+map.on('load', () => {
+  const style = map.getStyle();
+
+  // 底图自带的 building 层先拆掉，避免和高亮层抢同一份几何
+  for (const l of style.layers) if (/^building/.test(l.id)) map.removeLayer(l.id);
+
+  // 矢量源名字不写死，从样式里读 —— 换底图时这段不用改
+  const vectorSrc = Object.keys(style.sources).find(k => style.sources[k].type === 'vector');
+  if (!vectorSrc) return fail('这个样式没有矢量源，挤压不出建筑。');
+
+  // 3D 层插在第一个 symbol 层之前，让路名和 POI 始终压在建筑上面
+  const firstSymbol = style.layers.find(l => l.type === 'symbol');
+  const before = firstSymbol ? firstSymbol.id : undefined;
+
+  /* ---- 阶段 1：全城 3D 建筑 ---- */
+  map.addLayer({
+    id: 'city-3d',
+    type: 'fill-extrusion',
+    source: vectorSrc,
+    'source-layer': 'building',
+    minzoom: 13.5,
+    paint: {
+      // 白模：高度决定明度，和现有 three.js 版本的 whiteModel() 是同一个思路
+      'fill-extrusion-color': [
+        'interpolate', ['linear'], ['coalesce', ['get', 'render_height'], 9],
+        0, '#d7dade', 18, '#e6e8eb', 45, '#f1f2f4', 100, '#fafafb'
+      ],
+      'fill-extrusion-height': ['coalesce', ['get', 'render_height'], 9],
+      'fill-extrusion-base': ['coalesce', ['get', 'render_min_height'], 0],
+      'fill-extrusion-opacity': 1,
+      'fill-extrusion-vertical-gradient': true,
+    }
+  }, before);
+
+  /* ---- 阶段 4：路线 ---- */
+  map.addSource('route', { type: 'geojson', data: ROUTE });
+  map.addLayer({
+    id: 'route-casing', type: 'line', source: 'route',
+    filter: ['==', ['get', 'kind'], 'whole'],
+    layout: { 'line-cap': 'round', 'line-join': 'round' },
+    paint: { 'line-color': '#ffffff', 'line-width': ['interpolate', ['linear'], ['zoom'], 12, 4, 17, 11] }
+  }, before);
+  map.addLayer({
+    id: 'route-line', type: 'line', source: 'route',
+    filter: ['==', ['get', 'kind'], 'whole'],
+    layout: { 'line-cap': 'round', 'line-join': 'round' },
+    paint: {
+      'line-color': '#c8ccd2',
+      'line-width': ['interpolate', ['linear'], ['zoom'], 12, 2, 17, 6]
+    }
+  }, before);
+  // 当前腿单独加粗上色，走到哪亮到哪
+  map.addLayer({
+    id: 'route-active', type: 'line', source: 'route',
+    filter: ['all', ['==', ['get', 'kind'], 'leg'], ['==', ['get', 'from'], '']],
+    layout: { 'line-cap': 'round', 'line-join': 'round' },
+    paint: {
+      'line-color': '#ed7a19',
+      'line-width': ['interpolate', ['linear'], ['zoom'], 12, 3, 17, 7]
+    }
+  }, before);
+
+  /* ---- 阶段 2 结论 → B 方案：自己一层 fill-extrusion 做高亮 ----
+     id 由 highlights.geojson 自己发号（properties.fid），
+     不依赖底图 feature id，刷新和缩放都不会变。 */
+  map.addSource('hilite', { type: 'geojson', data: HILITE, promoteId: 'fid' });
+  map.addLayer({
+    id: 'hilite-3d',
+    type: 'fill-extrusion',
+    source: 'hilite',
+    paint: {
+      'fill-extrusion-color': [
+        'case',
+        ['boolean', ['feature-state', 'select'], false], '#ed7a19',
+        ['boolean', ['feature-state', 'hover'], false], '#f0a566',
+        '#b9bec6'
+      ],
+      'fill-extrusion-height': ['+', ['get', 'height'], 1.2],
+      'fill-extrusion-base': ['get', 'base'],
+      'fill-extrusion-opacity': 1,
+      'fill-extrusion-vertical-gradient': true,
+      'fill-extrusion-color-transition': { duration: 420 },
+    }
+  });
+
+  /* ---- 起终点 ---- */
+  for (const [stop, label] of [[STOPS[0], '起'], [STOPS[STOPS.length - 1], '终']]) {
+    const el = document.createElement('div');
+    el.textContent = label;
+    el.style.cssText =
+      'width:26px;height:26px;border-radius:50%;display:grid;place-items:center;' +
+      'font:500 12px/1 var(--font);background:#15181d;color:#fff;border:2px solid #fff;' +
+      'box-shadow:0 2px 8px rgba(0,0,0,.28)';
+    new maplibregl.Marker({ element: el, anchor: 'center' }).setLngLat(stop.center).addTo(map);
+  }
+
+  /* ---- 交互 ---- */
+  const popup = new maplibregl.Popup({ closeButton: false, offset: 12, className: 'hint' });
+
+  map.on('mousemove', 'hilite-3d', e => {
+    map.getCanvas().style.cursor = 'pointer';
+    const f = e.features[0];
+    if (hovered !== f.id) {
+      if (hovered != null) map.setFeatureState({ source: 'hilite', id: hovered }, { hover: false });
+      hovered = f.id;
+      map.setFeatureState({ source: 'hilite', id: hovered }, { hover: true });
+    }
+    const s = byId.get(f.properties.stop);
+    if (s) popup.setLngLat(e.lngLat).setText(`${s.order}. ${s.zh}`).addTo(map);
+  });
+  map.on('mouseleave', 'hilite-3d', () => {
+    map.getCanvas().style.cursor = '';
+    if (hovered != null) map.setFeatureState({ source: 'hilite', id: hovered }, { hover: false });
+    hovered = null;
+    popup.remove();
+  });
+  map.on('click', 'hilite-3d', e => {
+    const s = e.features[0].properties.stop;
+    if (s && s !== active) select(s);
+  });
+
+  styleReady = true;
+  statusEl.hidden = true;
+  document.getElementById('sheet').hidden = false;
+
+  const want = new URLSearchParams(location.search).get('stop');
+  select(byId.has(want) ? want : STOPS[0].id, { instant: true });
+});
+
+/* ═══════════════════════════════════════════════════════════════════
+   阶段 5 · 叙事联动：切站 = 高亮 + 飞行 + 换卡片
+   ═══════════════════════════════════════════════════════════════════ */
+
+function setSelected(stopId, on) {
+  const s = byId.get(stopId);
+  if (!s) return;
+  for (const fid of s.building.fids)
+    map.setFeatureState({ source: 'hilite', id: fid }, { select: on });
+}
+
+function select(id, { instant = false } = {}) {
+  const s = byId.get(id);
+  if (!s) return;
+
+  if (active) setSelected(active, false);   // 先清上一站，否则会留下两栋橙楼
+  active = id;
+  setSelected(id, true);
+
+  map.setFilter('route-active',
+    ['all', ['==', ['get', 'kind'], 'leg'], ['==', ['get', 'from'], id]]);
+
+  const cam = {
+    center: s.center,
+    zoom: zoomFor(s.camera.distance, s.center[1]),
+    pitch: s.camera.pitch,
+    bearing: s.camera.bearing,
+    padding: paddingFor(),
+  };
+  if (instant || reduceMotion) map.jumpTo(cam);
+  else map.flyTo({ ...cam, duration: 2000, curve: 1.42, essential: true });
+
+  renderCard(s);
+  history.replaceState(null, '', `?stop=${id}`);
+}
+
+function renderCard(s) {
+  document.getElementById('kicker').textContent = s.kicker;
+  document.getElementById('zh').textContent = s.zh;
+  document.getElementById('en').textContent = s.en;
+
+  document.getElementById('facts').innerHTML = s.facts
+    .map(([k, v]) => `<div><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join('');
+
+  // prose 里带 <strong>/<em>，是内容的一部分，原样渲染（数据来自本仓库，非用户输入）
+  document.getElementById('prose').innerHTML = s.prose.map(p => `<p>${p}</p>`).join('');
+
+  document.getElementById('leg').textContent = s.nextLegMeters
+    ? `下一站 · 沿路约 ${s.nextLegMeters} m`
+    : `路线终点 · 全程约 ${(WALK.totalMeters / 1000).toFixed(1)} km`;
+
+  const i = s.order - 1;
+  document.getElementById('prev').disabled = i === 0;
+  document.getElementById('next').disabled = i === STOPS.length - 1;
+
+  for (const c of document.querySelectorAll('.chip')) {
+    const on = c.dataset.id === s.id;
+    c.setAttribute('aria-current', on ? 'true' : 'false');
+    if (on) c.scrollIntoView({ block: 'nearest', inline: 'center', behavior: reduceMotion ? 'auto' : 'smooth' });
+  }
+  document.getElementById('card').scrollTop = 0;
+}
+
+const esc = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+/* ---------- chip 条 ---------- */
+const rail = document.getElementById('rail');
+for (const s of STOPS) {
+  const b = document.createElement('button');
+  b.className = 'chip';
+  b.type = 'button';
+  b.dataset.id = s.id;
+  b.setAttribute('aria-current', 'false');
+  b.innerHTML = `<b>${String(s.order).padStart(2, '0')}</b>${esc(s.zh)}`;
+  b.addEventListener('click', () => select(s.id));
+  rail.appendChild(b);
+}
+
+const step = d => {
+  const i = byId.get(active).order - 1 + d;
+  if (i >= 0 && i < STOPS.length) select(STOPS[i].id);
+};
+document.getElementById('prev').addEventListener('click', () => step(-1));
+document.getElementById('next').addEventListener('click', () => step(1));
+addEventListener('keydown', e => {
+  if (e.target.closest('button,input,a')) return;
+  if (e.key === 'ArrowRight' || e.key === 'ArrowDown') { e.preventDefault(); step(1); }
+  if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') { e.preventDefault(); step(-1); }
+});
+
+// 手机横竖屏切换后 zoom 换算的基准变了，重新对一次镜头
+let t;
+addEventListener('resize', () => {
+  clearTimeout(t);
+  t = setTimeout(() => { if (active) select(active, { instant: true }); }, 220);
+});
+</script>
+</body>
+</html>
