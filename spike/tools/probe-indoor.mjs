@@ -113,12 +113,12 @@ if (failed.length) {
 
 const anyIndoor = report.some(r => r.indoor + r.room > 0);
 if (anyIndoor) {
-  console.log('有站点存在室内数据。可以考虑抓下来做剖面/楼层，');
+  console.log('有站点存在室内数据。可以考虑抓下来用，');
   console.log('但先看覆盖度够不够：几个房间和一整层是两回事。');
 } else {
   console.log(`查成的 ${report.length} 个站都没有可用的室内数据。`);
   console.log('这不意外 —— OSM 的室内标注覆盖率很低，主要集中在大型机场、车站、商场。');
-  console.log('想做室内就只能：① 自己画　② 找场馆要授权平面图　③ 放弃做真实室内，改做剖面体量。');
+  console.log('想做室内就只能：① 自己画　② 找场馆要授权平面图　③ 不做室内。');
 }
 console.log('\n注意：entrance 和 building:part 不是室内数据 ——');
 console.log('entrance 是门的位置，building:part 是外部体量细分（主楼塔那种）。');
