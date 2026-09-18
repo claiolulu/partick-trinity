@@ -272,7 +272,8 @@ const resolved = CFG.stops.map(stop => {
     ? Math.max((box[2] - box[0]) * mPerLon(center[1]), (box[3] - box[1]) * M_PER_LAT) : 0;
 
   console.log(`  ${stop.id.padEnd(14)} ${String(own.length).padStart(3)} 栋` +
-    (own.length ? `  跨度 ${Math.round(span)} m` : '  （无建筑高亮）'));
+    (own.length ? `  跨度 ${Math.round(span)} m` : '  （无建筑高亮）') +
+    (stop.tasks?.length ? `  · ${stop.tasks.length} 个任务` : ''));
   own.filter(f => f.properties.name).slice(0, 4)
      .forEach(f => console.log(`        · ${f.properties.name}  ${f.properties.osmId}  h=${f.properties.height}m`));
 
@@ -339,6 +340,7 @@ const stops = resolved.map((r, i) => {
     nextLegMeters: legs[i]?.meters ?? null,
     facts: r.stop.facts || [],
     prose: r.stop.prose || [],
+    tasks: r.stop.tasks || [],
   };
 });
 
@@ -380,6 +382,8 @@ console.log('\n▶ 输出');
 write('walk.json', walk);
 write('route.geojson', route);
 write('highlights.geojson', highlights);
-console.log(`\n✓ ${stops.length} 站 · ${highlights.features.length} 栋高亮建筑 · 全程 ${(total / 1000).toFixed(2)} km`);
+const nTasks = stops.reduce((a, s) => a + s.tasks.length, 0);
+console.log(`\n✓ ${stops.length} 站 · ${highlights.features.length} 栋高亮建筑` +
+  (nTasks ? ` · ${nTasks} 个打卡任务` : '') + ` · 全程 ${(total / 1000).toFixed(2)} km`);
 if (warnings.length) console.log(`\n注意 ${warnings.length} 条（见上）`);
 console.log(`\n打开：spike/index.html?walk=${CFG.id}\n`);

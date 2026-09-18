@@ -126,6 +126,8 @@
   .chip b{font-family:var(--mono);font-size:11px;font-weight:500;color:var(--ink-faint)}
   .chip[aria-current="true"]{background:var(--ink);border-color:var(--ink);color:#fff}
   .chip[aria-current="true"] b{color:var(--accent)}
+  .chip.done b::after{content:" ✓";color:var(--accent)}
+  .chip[aria-current="true"].done b::after{color:#fff}
 
   #card{flex:1 1 auto;overflow-y:auto;padding:16px 18px 24px;-webkit-overflow-scrolling:touch}
   #kicker{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;color:var(--accent-deep);margin:0 0 6px}
@@ -143,6 +145,58 @@
   #prose em{font-style:italic;color:var(--ink-dim)}
 
   #leg{margin:16px 0 0;font-family:var(--mono);font-size:11px;letter-spacing:.06em;color:var(--ink-faint)}
+
+  /* 窄条上的打卡进度 */
+  #g-prog{
+    flex:0 0 auto;font-family:var(--mono);font-size:10.5px;font-weight:500;
+    border-radius:999px;padding:3px 7px;white-space:nowrap;
+    border:1px solid var(--edge-hi);color:var(--ink-dim);background:#fff;
+  }
+  #g-prog[hidden]{display:none}
+  #g-prog.all{background:var(--accent);border-color:var(--accent);color:#fff}
+
+  /* ---------- 打卡任务 ---------- */
+  #tasks{margin:20px 0 0;border-top:1px solid var(--edge);padding-top:14px}
+  #tasks[hidden]{display:none}
+  #tasks h3{
+    margin:0 0 10px;font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;
+    color:var(--ink-faint);font-weight:500;display:flex;align-items:center;gap:8px;
+  }
+  #tasks h3 b{color:var(--accent-deep);font-weight:600}
+  #tasks ul{list-style:none;margin:0;padding:0}
+  .task{
+    width:100%;display:flex;gap:11px;align-items:flex-start;text-align:left;
+    background:none;border:0;border-bottom:1px solid var(--edge);
+    padding:11px 2px;font:inherit;color:inherit;cursor:pointer;
+  }
+  .task .box{
+    flex:0 0 auto;width:21px;height:21px;margin-top:1px;border-radius:5px;
+    border:1.5px solid var(--edge-hi);display:grid;place-items:center;
+    transition:background .16s,border-color .16s;
+  }
+  .task .box::after{
+    content:"";width:9px;height:5px;margin-top:-2px;
+    border-left:2px solid #fff;border-bottom:2px solid #fff;
+    transform:rotate(-45deg) scale(.4);opacity:0;transition:opacity .16s,transform .16s;
+  }
+  .task[aria-pressed="true"] .box{background:var(--accent);border-color:var(--accent)}
+  .task[aria-pressed="true"] .box::after{opacity:1;transform:rotate(-45deg) scale(1)}
+  .task .body{flex:1 1 auto;min-width:0}
+  .task .kind{
+    display:inline-block;font-family:var(--mono);font-size:9.5px;letter-spacing:.1em;
+    color:var(--ink-faint);border:1px solid var(--edge);border-radius:3px;
+    padding:1px 5px;margin-right:6px;vertical-align:1px;
+  }
+  .task .tx{font-size:14px;line-height:1.5}
+  .task[aria-pressed="true"] .tx{color:var(--ink-faint);text-decoration:line-through}
+  #tasks .foot{
+    display:flex;justify-content:space-between;align-items:center;gap:10px;
+    margin-top:12px;font-family:var(--mono);font-size:10.5px;color:var(--ink-faint);
+  }
+  #tasks .foot button{
+    border:1px solid var(--edge-hi);background:#fff;color:var(--ink-dim);
+    border-radius:999px;padding:5px 11px;font:inherit;font-size:10.5px;cursor:pointer;
+  }
 
   /* ---------- 状态 / 报错 ---------- */
   #status{
@@ -201,6 +255,7 @@
     <button id="toggle" type="button" aria-expanded="false" aria-controls="body">
       <span class="ord" id="g-ord"></span>
       <span class="nm"><b id="g-zh"></b><i id="g-en"></i></span>
+      <span class="prog" id="g-prog" hidden></span>
       <span class="chev" aria-hidden="true">⌃</span>
     </button>
     <button id="next" class="step" type="button" aria-label="下一站">›</button>
@@ -213,6 +268,7 @@
       <p id="en"></p>
       <dl id="facts"></dl>
       <div id="prose"></div>
+      <section id="tasks" hidden></section>
       <p id="leg"></p>
     </article>
   </div>
@@ -301,6 +357,9 @@ picker.innerHTML = WALKS
 picker.addEventListener('change', e => { location.search = `?walk=${e.target.value}`; });
 
 const STOPS = WALK.stops;
+// 老的 walk.json 里没有 tasks 字段，统一补成空数组，
+// 省得每个用到的地方都写一遍防御
+for (const s of STOPS) if (!Array.isArray(s.tasks)) s.tasks = [];
 const byId = new Map(STOPS.map(s => [s.id, s]));
 
 /* ---------- 相机：distance(米) → zoom，按当前视口算 ----------
@@ -567,6 +626,9 @@ function renderCard(s) {
   // prose 里带 <strong>/<em>，是内容的一部分，原样渲染（数据来自本仓库，非用户输入）
   document.getElementById('prose').innerHTML = s.prose.map(p => `<p>${p}</p>`).join('');
 
+  renderTasks(s);
+  syncProgress();
+
   document.getElementById('leg').textContent = s.nextLegMeters
     ? `下一站 · 沿路约 ${s.nextLegMeters} m`
     : `路线终点 · 全程约 ${(WALK.totalMeters / 1000).toFixed(1)} km`;
@@ -581,6 +643,84 @@ function renderCard(s) {
     if (on) c.scrollIntoView({ block: 'nearest', inline: 'center', behavior: reduceMotion ? 'auto' : 'smooth' });
   }
   document.getElementById('card').scrollTop = 0;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   打卡
+
+   ⚠️ 状态只存在访客自己这台设备的 localStorage 里。
+   这是个纯静态站点，没有后端 —— 所以：
+     · 刷新、关页面再回来都还在
+     · 换手机 / 换浏览器 / 无痕模式 = 从零开始
+     · 人和人之间互相看不到进度，没有排行榜
+   要做多人共享，必须上后端，那是另一件事。
+   ═══════════════════════════════════════════════════════════════════ */
+const TKEY = `spike.tasks.${WALK_ID}`;
+const KIND = { look:'观察', find:'找到', photo:'拍照', walk:'走一段', feel:'体验' };
+
+let done = (() => {
+  // localStorage 在无痕模式 / 禁用站点数据时会直接抛，不能让它带崩整页
+  try { return JSON.parse(localStorage.getItem(TKEY)) || {}; } catch { return {}; }
+})();
+const saveDone = () => { try { localStorage.setItem(TKEY, JSON.stringify(done)); } catch {} };
+
+const doneCount = s => (done[s.id] || []).filter(Boolean).length;
+const totalDone = () => STOPS.reduce((a, s) => a + doneCount(s), 0);
+const totalTasks = () => STOPS.reduce((a, s) => a + s.tasks.length, 0);
+
+function renderTasks(s) {
+  const el = document.getElementById('tasks');
+  if (!s.tasks || !s.tasks.length) { el.hidden = true; el.innerHTML = ''; return; }
+  el.hidden = false;
+  const d = done[s.id] || [];
+  const n = doneCount(s);
+  el.innerHTML =
+    `<h3>打卡 <b>${n}/${s.tasks.length}</b></h3><ul>` +
+    s.tasks.map((t, i) => `<li><button type="button" class="task" data-i="${i}" aria-pressed="${!!d[i]}">
+        <i class="box" aria-hidden="true"></i>
+        <span class="body"><span class="kind">${KIND[t.kind] || '任务'}</span><span class="tx">${esc(t.text)}</span></span>
+      </button></li>`).join('') +
+    `</ul><div class="foot"><span>全程 ${totalDone()}/${totalTasks()}</span>` +
+    `<button type="button" id="resetTasks">清空本路线打卡</button></div>`;
+}
+
+// 事件委托：卡片内容是整块重画的，逐个绑监听会漏
+document.getElementById('tasks').addEventListener('click', e => {
+  const btn = e.target.closest('.task');
+  if (btn) {
+    const s = byId.get(active);
+    const i = +btn.dataset.i;
+    const d = done[s.id] || (done[s.id] = []);
+    d[i] = !d[i];
+    saveDone();
+    renderTasks(s);
+    syncProgress();
+    return;
+  }
+  if (e.target.id === 'resetTasks') {
+    if (!confirm('清空这条路线的全部打卡记录？')) return;
+    done = {}; saveDone();
+    renderTasks(byId.get(active));
+    syncProgress();
+  }
+});
+
+/* 打卡进度同步到窄条和 chip —— 收起状态也要看得见还有没有没做的 */
+function syncProgress() {
+  const s = byId.get(active);
+  const prog = document.getElementById('g-prog');
+  if (!s || !s.tasks.length) { prog.hidden = true; }
+  else {
+    const n = doneCount(s);
+    prog.hidden = false;
+    prog.textContent = `${n}/${s.tasks.length}`;
+    prog.classList.toggle('all', n === s.tasks.length);
+  }
+  for (const c of document.querySelectorAll('.chip')) {
+    const st = byId.get(c.dataset.id);
+    const full = st && st.tasks.length && doneCount(st) === st.tasks.length;
+    c.classList.toggle('done', !!full);
+  }
 }
 
 const esc = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));

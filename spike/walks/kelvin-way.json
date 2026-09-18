@@ -20,6 +20,9 @@
     "  heightOverride  强制指定这一站所有建筑的高度（米），OSM 没高度数据时用",
     "  camera    可省。省了就自动推：朝向取行进方向，距离按建筑跨度算",
     "              bearing 镜头朝向(0=北,顺时针) / pitch 俯仰 / distance 相机到目标的米数 / look 注视点高度",
+    "  tasks     可选。到现场做的打卡任务 [{ kind, text }]",
+    "              kind: look 观察 / find 找到 / photo 拍照 / walk 走一段 / feel 体验",
+    "              打卡状态存在访客自己手机的 localStorage 里，换设备不同步，也不跨人共享",
     "  facts     四组 [标签, 值]",
     "  prose     正文段落，可以带 <strong> <em>",
     "",
@@ -37,6 +40,11 @@
       "at": [-4.29876, 55.87323],
       "buildings": { "osmIds": ["way/51795705"] },
       "camera": { "bearing": 120, "pitch": 60, "distance": 250, "look": 12 },
+      "tasks": [
+        { "kind": "find", "text": "在门楣或奠基石上找到落成年份，记下来 —— 这一站的资料还缺这条" },
+        { "kind": "look", "text": "绕教堂走一圈，数一数它一共有几个入口" },
+        { "kind": "photo", "text": "走到街对面，用竖构图把整座塔收进一张照片" }
+      ],
       "facts": [
         ["宗派", "苏格兰教会"],
         ["街区", "Dowanhill"],
@@ -60,6 +68,12 @@
         "nameRadius": 400
       },
       "camera": { "bearing": 200, "pitch": 58, "distance": 210, "look": 8 },
+      "tasks": [
+        { "kind": "look", "text": "进 Kibble Palace，抬头数一数穹顶从中心辐射出多少根铸铁肋" },
+        { "kind": "find", "text": "在中央水池边找到那圈大理石雕像，挑一尊你最喜欢的" },
+        { "kind": "feel", "text": "在树蕨底下站满三十秒，留意这里的空气和门外有什么不一样" },
+        { "kind": "photo", "text": "找到园子里最高的那株树蕨，拍一张能看出它比人高多少的照片" }
+      ],
       "facts": [
         ["创建", "1817"],
         ["迁址现地", "1842"],
@@ -80,6 +94,11 @@
       "at": [-4.28864, 55.87109],
       "buildings": { "radius": 130, "minArea": 60, "maxCount": 24 },
       "camera": { "bearing": 20, "pitch": 66, "distance": 330, "look": 56 },
+      "tasks": [
+        { "kind": "walk", "text": "穿过 the Cloisters 拱廊，从一头走到另一头的方庭" },
+        { "kind": "photo", "text": "在拱廊里找一个角度，把那排细柱拍成一条线" },
+        { "kind": "find", "text": "走到 University Avenue 上，找到一个能看见塔尖全貌的位置" }
+      ],
       "facts": [
         ["建校", "1451"],
         ["迁址", "1870"],
@@ -99,6 +118,11 @@
       "kicker": "STOP 04 · KELVIN WAY",
       "at": [-4.28300, 55.87000],
       "camera": { "bearing": 230, "pitch": 58, "distance": 420, "look": 6 },
+      "tasks": [
+        { "kind": "find", "text": "找到斯图尔特纪念喷泉，绕它走一圈，看看基座上刻了什么" },
+        { "kind": "walk", "text": "沿凯尔文河走一段，挑一座桥站上去往下看" },
+        { "kind": "look", "text": "找一棵你觉得最老的树，估一估要几个人手拉手才能围住" }
+      ],
       "facts": [
         ["辟建", "1852"],
         ["设计", "Joseph Paxton"],
@@ -119,6 +143,11 @@
       "at": [-4.29063, 55.86858],
       "buildings": { "osmIds": ["way/26605473"] },
       "camera": { "bearing": 350, "pitch": 64, "distance": 300, "look": 26 },
+      "tasks": [
+        { "kind": "walk", "text": "从公园那一侧的正门进去，自己验证一下\"背对大街\"到底是不是传言" },
+        { "kind": "find", "text": "找到悬在西厅上方的那架喷火战斗机，走到它正下方抬头看" },
+        { "kind": "feel", "text": "在中央大厅赶上一场管风琴演奏，听完一整曲" }
+      ],
       "facts": [
         ["开馆", "1901"],
         ["风格", "西班牙巴洛克复兴"],
